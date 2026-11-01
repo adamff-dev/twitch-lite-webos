@@ -62,7 +62,7 @@
     if (!st.refresh) return Promise.reject(new Error('sin refresh token'));
     function done() { refreshing = null; }
     refreshing = postForm(OAUTH + 'token', { client_id: cid(), grant_type: 'refresh_token', refresh_token: st.refresh }).then(function (r) {
-      if (!r.ok || !r.json.access_token) { clear(); throw new Error('sesión caducada'); }
+      if (!r.ok || !r.json.access_token) { clear(); throw new Error(I18n.t('error.sessionExpired')); }
       st.access = r.json.access_token; st.refresh = r.json.refresh_token || st.refresh; save();
     });
     refreshing.then(done, done);

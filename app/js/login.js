@@ -11,8 +11,8 @@
   function fail(msg) {
     mode = 'error';
     qr.innerHTML = ''; code.textContent = '';
-    stat.textContent = msg + '\nPulsa OK para reintentar.';
-    hint.textContent = 'Atrás: cerrar';
+    stat.textContent = msg + '\n' + I18n.t('login.retryHint');
+    hint.textContent = I18n.t('login.hintBack');
   }
 
   function begin() {
@@ -20,40 +20,40 @@
     qr.innerHTML = ''; code.textContent = '';
     if (!w.CONFIG.CLIENT_ID) {
       mode = 'noclient';
-      stat.textContent = 'Falta el Client ID de Twitch.\nEdita app/js/config.js o compila con TWITCH_CLIENT_ID=<id> npm run package.';
-      hint.textContent = 'Atrás: cerrar';
+      stat.textContent = I18n.t('login.noClient');
+      hint.textContent = I18n.t('login.hintBack');
       return;
     }
     mode = 'wait';
-    stat.textContent = 'Generando código…';
-    hint.textContent = 'Atrás: cancelar';
+    stat.textContent = I18n.t('login.generating');
+    hint.textContent = I18n.t('login.hintCancel');
     Auth.begin().then(function (d) {
       if (!isOpen) return;
       qr.innerHTML = w.QR.svg(d.uri);
       code.textContent = d.userCode;
-      stat.textContent = 'Escanea el QR con el móvil e inicia sesión en Twitch.\nSi no puedes, entra en twitch.tv/activate e introduce el código.\n\nEsperando autorización…';
+      stat.textContent = I18n.t('login.instructions');
       cancel = Auth.poll(d, function (r) {
         cancel = null;
         if (!isOpen) return;
         if (r.ok) {
           mode = 'done';
           qr.innerHTML = ''; code.textContent = '';
-          stat.textContent = '¡Sesión iniciada como ' + Auth.login() + '!';
+          stat.textContent = I18n.t('login.done', { name: Auth.login() });
           hint.textContent = '';
           setTimeout(function () { if (isOpen && mode === 'done') { close(); if (onChange) onChange(true); } }, 2000);
         } else {
-          fail(r.error === 'expired' ? 'El código ha caducado.' : 'Error: ' + r.error);
+          fail(r.error === 'expired' ? I18n.t('login.expired') : I18n.t('login.error', { msg: r.error }));
         }
       });
-    }, function (e) { if (isOpen) fail('No se pudo iniciar el proceso: ' + e.message); });
+    }, function (e) { if (isOpen) fail(I18n.t('login.startFailed', { msg: e.message })); });
   }
 
   function open(cb) {
     onChange = cb; isOpen = true; box.hidden = false; touch();
     if (Auth.isLoggedIn()) {
       mode = 'in'; qr.innerHTML = ''; code.textContent = '';
-      stat.textContent = 'Sesión iniciada como ' + (Auth.login() || 'tu cuenta');
-      hint.textContent = 'OK: cerrar sesión · Atrás: volver';
+      stat.textContent = I18n.t('login.loggedInAs', { name: Auth.login() || I18n.t('login.yourAccount') });
+      hint.textContent = I18n.t('login.hintIn');
       Auth.avatar(300).then(function (u) {
         if (u && isOpen && (mode === 'in' || mode === 'confirm')) {
           qr.innerHTML = '';
@@ -72,8 +72,8 @@
     if (k !== 'ok' || Date.now() - stamp < 700) return;
     if (mode === 'in') {                                  // cerrar sesión pide confirmación explícita
       mode = 'confirm'; touch();
-      stat.textContent = '¿Cerrar la sesión de ' + (Auth.login() || 'tu cuenta') + '?';
-      hint.textContent = 'OK: confirmar · Atrás: cancelar';
+      stat.textContent = I18n.t('login.confirmLogout', { name: Auth.login() || I18n.t('login.yourAccount') });
+      hint.textContent = I18n.t('login.hintConfirm');
     } else if (mode === 'confirm') { Auth.logout(); close(); if (onChange) onChange(false); }
     else if (mode === 'error') { touch(); begin(); }
   }

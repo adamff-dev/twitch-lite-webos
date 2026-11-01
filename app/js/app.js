@@ -15,7 +15,7 @@
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
     });
   }
-  function fmt(n) { return n >= 1000 ? (n / 1000).toFixed(1).replace('.', ',') + ' K' : String(n); }
+  function fmt(n) { return I18n.compact(n); }
   function two(n) { return n < 10 ? '0' + n : String(n); }
   function dur(s) {
     var h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60;
@@ -36,7 +36,7 @@
     else if (it.type !== 'channel' || it.live) h += '<div class="vw">' + fmt(it.viewers) + '</div>';
     h += '</div>';
     if (it.type === 'video') {
-      h += '<div class="nm">' + esc(it.title) + '</div><div class="ti">' + esc(it.date) + ' · ' + fmt(it.views) + ' visualizaciones</div><div class="gm">' + esc(it.game) + '</div>';
+      h += '<div class="nm">' + esc(it.title) + '</div><div class="ti">' + esc(it.date) + ' · ' + I18n.t('card.views', { n: fmt(it.views) }) + '</div><div class="gm">' + esc(it.game) + '</div>';
     } else if (it.type === 'stream') {
       h += '<div class="nm">' + esc(it.name) + '</div><div class="ti">' + esc(it.title) + '</div><div class="gm">' + esc(it.game) + '</div>';
     } else {
@@ -104,22 +104,24 @@
   /* ---------- vistas ---------- */
   // fetch(cursor) -> Promise<{items, cursor, hasNext}>. Sin fetch = vista estática con mensaje.
   function makeView(o) {
-    return { tab: o.tab, title: o.title || '', items: [], cursor: null, done: !o.fetch, fetch: o.fetch || null, focus: 0, scroll: 0, empty: o.empty || '' };
+    return { tab: o.tab, title: o.title || '', items: [], cursor: null, done: !o.fetch, fetch: o.fetch || null, focus: 0, scroll: 0, empty: o.empty || '', vars: o.vars };
   }
+  // El mensaje de vista vacía se guarda como clave y se traduce al mostrarlo (así cambia con el idioma).
+  function emptyText(v) { return v.empty ? I18n.t(v.empty, v.vars) : ''; }
 
   function tabView(name) {
     var li = Auth.isLoggedIn();
-    if (name === 'streams') return makeView({ tab: name, fetch: Api.topStreams, empty: 'No hay directos' });
-    if (name === 'games') return makeView({ tab: name, fetch: Api.topGames, empty: 'No hay categorías' });
+    if (name === 'streams') return makeView({ tab: name, fetch: Api.topStreams, empty: 'empty.streams' });
+    if (name === 'games') return makeView({ tab: name, fetch: Api.topGames, empty: 'empty.games' });
     if (name === 'following') {
-      return li ? makeView({ tab: name, fetch: Auth.followedStreams, empty: 'Ninguno de los canales que sigues está en directo ahora mismo' })
-        : makeView({ tab: name, empty: 'Inicia sesión con "Entrar" (arriba a la derecha) para ver los canales que sigues' });
+      return li ? makeView({ tab: name, fetch: Auth.followedStreams, empty: 'empty.following' })
+        : makeView({ tab: name, empty: 'empty.followingGuest' });
     }
     if (name === 'videos') {
-      return li ? makeView({ tab: name, fetch: Auth.followedChannels, empty: 'Aún no sigues ningún canal' })
-        : makeView({ tab: name, empty: 'Inicia sesión con "Entrar" para ver los vídeos de tus canales, o usa Buscar para encontrar un canal' });
+      return li ? makeView({ tab: name, fetch: Auth.followedChannels, empty: 'empty.videos' })
+        : makeView({ tab: name, empty: 'empty.videosGuest' });
     }
-    return makeView({ tab: 'search', empty: 'Selecciona el cuadro de búsqueda y pulsa OK para escribir' });
+    return makeView({ tab: 'search', empty: 'empty.search' });
   }
 
   function markTabs() {
@@ -135,7 +137,7 @@
     grid.innerHTML = '';
     appendItems(v.items, 0);
     content.scrollTop = v.scroll || 0;
-    say(v.items.length ? '' : v.empty);
+    say(v.items.length ? '' : emptyText(v));
     if (!v.items.length && !v.done) loadMore(true);
     else if (v.items.length) setFocus(grid.children[Math.min(v.focus, v.items.length - 1)]);
     else setFocus(activeTab());
@@ -145,7 +147,7 @@
     var v = view;
     if (!v || loading || v.done || !v.fetch) return;
     loading = true;
-    if (first) say('Cargando…');
+    if (first) say(I18n.t('loading'));
     v.fetch(v.cursor).then(function (r) {
       var start = v.items.length;
       v.items = v.items.concat(r.items);
@@ -154,11 +156,11 @@
       loading = false;
       if (view !== v) return;
       appendItems(r.items, start);
-      say(v.items.length ? '' : v.empty || 'Sin resultados');
+      say(v.items.length ? '' : emptyText(v) || I18n.t('empty.noResults'));
       if (first && v.items.length) setFocus(grid.children[0]);
     }, function (e) {
       loading = false;
-      if (view === v && !v.items.length) say('Error: ' + e.message + ' — pulsa OK en la pestaña para reintentar');
+      if (view === v && !v.items.length) say(I18n.t('error.retry', { msg: e.message }));
     });
   }
 
@@ -177,7 +179,7 @@
   function openChannel(login, name) {
     push(makeView({
       tab: view.tab, title: name,
-      fetch: function (c) { return Api.channelVideos(login, c); }, empty: 'Este canal no tiene vídeos'
+      fetch: function (c) { return Api.channelVideos(login, c); }, empty: 'empty.channel'
     }));
   }
 
@@ -186,14 +188,14 @@
     if (!text) return;
     stack = [];
     views.search = makeView({
-      tab: 'search', fetch: function () { return Api.search(text); }, empty: 'Sin resultados para "' + text + '"'
+      tab: 'search', fetch: function () { return Api.search(text); }, empty: 'empty.searchFor', vars: { q: text }
     });
     showView(views.search);
   }
 
   /* ---------- cuenta ---------- */
   function setAcct(img) {
-    acct.textContent = Auth.isLoggedIn() ? (Auth.login() || 'Cuenta') : 'Entrar';
+    acct.textContent = Auth.isLoggedIn() ? (Auth.login() || I18n.t('account.default')) : I18n.t('account.login');
     if (img) {
       var el = document.createElement('img');
       el.className = 'av'; el.src = img;
@@ -219,6 +221,7 @@
   function activate(el) {
     var tab = el.getAttribute('data-tab');
     if (tab) {
+      if (tab === 'lang') { I18n.toggle(); return; }     // selector ES/EN
       if (tab === 'search') { qin.focus(); return; }     // abre el teclado en pantalla
       if (tab === 'account') { Login.open(onAuthChange); return; }
       switchTab(tab);
@@ -227,7 +230,7 @@
     var it = itemOf(el);
     if (!it) return;
     if (it.type === 'game') {
-      push(makeView({ tab: view.tab, title: it.name, fetch: function (c) { return Api.gameStreams(it.key, c); }, empty: 'Nadie emite esta categoría ahora mismo' }));
+      push(makeView({ tab: view.tab, title: it.name, fetch: function (c) { return Api.gameStreams(it.key, c); }, empty: 'empty.game' }));
     } else if (it.type === 'channel') {
       openChannel(it.login, it.name);
     } else {                                              // stream | video
@@ -244,7 +247,7 @@
     var now = Date.now();
     if (now - lastBack < 2500) { try { window.close(); } catch (e) {} return; }
     lastBack = now;
-    flash('Pulsa Atrás otra vez para salir');
+    flash(I18n.t('app.exitHint'));
   }
 
   /* ---------- mando ---------- */
@@ -280,7 +283,22 @@
     else if (k === 'left' || k === 'right' || k === 'up' || k === 'down') move(k);
   });
 
-  refreshAcct();
+  /* ---------- idioma ---------- */
+  var langEl = $('lang');
+  function relang() {
+    langEl.textContent = I18n.lang().toUpperCase();
+    refreshAcct();
+    if (!view) return;
+    var inGrid = foc && grid.contains(foc), keep = view.focus;
+    if (inGrid) foc = null;
+    grid.innerHTML = '';
+    appendItems(view.items, 0);
+    say(view.items.length ? '' : emptyText(view));
+    if (inGrid && view.items.length) setFocus(grid.children[Math.min(keep, view.items.length - 1)]);
+  }
+  I18n.onChange(relang);
+
+  relang();
   Auth.init().then(function () {
     var was = acct.textContent;
     refreshAcct();

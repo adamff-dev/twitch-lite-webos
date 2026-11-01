@@ -127,6 +127,8 @@ function boot(o = {}) {
   const N = o.net || net(o);
   w.fetch = N.fetch;
   for (const [k, v] of Object.entries(o.ls || {})) w.localStorage.setItem(k, v);
+  const lang = o.lang === undefined ? 'es' : o.lang;
+  if (lang) w.localStorage.setItem('lang', lang);
   const P = w.HTMLMediaElement.prototype;
   P.load = () => {};
   Object.defineProperty(P, 'paused', { get() { return this.__p !== false; }, configurable: true });
@@ -771,6 +773,100 @@ function boot(o = {}) {
   key(K.back);
   assert.equal(closed, 1, 'la segunda pulsación seguida cierra la app');
   ok('navegación: Atrás por niveles y salir solo con doble pulsación');
+}
+
+/* ---------- 9) idioma (español / inglés) ---------- */
+{
+  const SESSION = { tauth: JSON.stringify({ access: 'acc1', refresh: 'r', userId: '42', login: 'adam', cid: 'ue6666qo983tsx6so1t0vnawi233wa' }) };
+
+  // detección: sin preferencia guardada, según el idioma del sistema
+  let t = boot({ lang: null });
+  assert.equal(t.w.I18n.lang(), 'en', 'jsdom informa en-US: inglés');
+  t = boot({ lang: null, beforeScripts: (w) => Object.defineProperty(w.navigator, 'language', { get: () => 'es-ES' }) });
+  assert.equal(t.w.I18n.lang(), 'es', 'un sistema en es-ES arranca en español');
+  assert.equal(t.$('acct').textContent, 'Entrar');
+  ok('idioma: sin preferencia sigue al sistema (es-* → español, resto → inglés)');
+
+  // interfaz en inglés
+  t = boot({ lang: 'en' });
+  await t.until(() => t.cards().length === 6, 'inicio en inglés');
+  const tabs = [...t.d.querySelectorAll('#top .tab')].map((n) => n.textContent);
+  assert.deepEqual(tabs.slice(0, 4), ['Home', 'Categories', 'Following', 'Videos']);
+  assert.equal(t.$('q').getAttribute('placeholder'), 'Search channel…');
+  assert.equal(t.$('acct').textContent, 'Log in');
+  assert.equal(t.$('lang').textContent, 'EN');
+  assert.equal(t.d.documentElement.lang, 'en');
+  ok('inglés: pestañas, buscador, botón de cuenta e idioma del documento');
+
+  t.focusTab('following'); t.key(t.K.ok);
+  assert.match(t.$('msg').textContent, /^Log in with "Log in" \(top right\)/);
+  ok('inglés: mensajes de vista vacía');
+
+  // selector ES/EN: cambia la interfaz y recuerda la elección
+  t.focusTab('lang'); t.key(t.K.ok);
+  assert.equal(t.w.I18n.lang(), 'es');
+  assert.equal(t.w.localStorage.getItem('lang'), 'es');
+  assert.equal(t.$('acct').textContent, 'Entrar');
+  assert.equal(t.$('lang').textContent, 'ES');
+  assert.equal(t.focused().id, 'lang', 'el foco se queda en el selector');
+  assert.match(t.$('msg').textContent, /^Inicia sesión con "Entrar"/, 'el mensaje vacío se traduce al cambiar');
+  t.focusTab('lang'); t.key(t.K.ok);
+  assert.equal(t.w.I18n.lang(), 'en');
+  ok('idioma: el selector ES/EN cambia la interfaz en caliente y se recuerda');
+
+  // tarjetas de vídeo: el recuento de visualizaciones usa el idioma activo
+  t = boot({ lang: 'en', ls: SESSION });
+  await t.until(() => t.cards().length === 6, 'inicio antes de cambiar de pestaña');
+  t.focusTab('videos'); t.key(t.K.ok);
+  await t.until(() => t.cards().length === 2, 'canales seguidos en inglés');
+  t.key(t.K.ok);
+  await t.until(() => t.cards().length === 3, 'vídeos del canal en inglés');
+  const meta = t.d.querySelector('#grid .card:nth-child(2) .ti').textContent;
+  assert.match(meta, /^\d{4}-\d{2}-\d{2} · 10 views$/, 'meta del vídeo: ' + meta);
+  t.key(t.K.back);
+  ok('inglés: recuento de visualizaciones en las tarjetas de vídeo');
+
+  // puntos y reproductor en inglés
+  t = boot({ lang: 'en', ls: SESSION, claim: true });
+  await t.until(() => t.cards().length === 6, 'inicio con sesión');
+  t.key(t.K.ok);
+  await t.until(() => !t.$('ptoast').hidden, 'aviso de puntos en inglés');
+  assert.equal(t.$('ptoast').textContent, '+50 points · 1,234');
+  await t.until(() => t.$('v').getAttribute('src'), 'src del directo en inglés');
+  assert.match(t.$('ohint').textContent, /^OK pause · ▲ quality · ▼ chat · Back exit$/);
+  t.key(t.K.ok);
+  await t.until(() => !t.$('pstate').hidden, 'estado de pausa');
+  assert.equal(t.$('pstate').textContent, '⏸  Paused');
+  t.key(t.K.back);
+  ok('inglés: aviso de puntos con separador de miles inglés, pausa y pistas del reproductor');
+
+  // VOD: pistas y calidad de salto en inglés
+  t.w.Player.open({ type: 'video', id: '901', name: 'Chan1', title: 'VOD', date: '', game: '', duration: 3725 }, () => {});
+  await t.until(() => t.$('v').getAttribute('src'), 'src del VOD en inglés');
+  assert.match(t.$('ohint').textContent, /skip \(press fast to go further\)/);
+  assert.match(t.$('oinfo').textContent, /Chan1/);
+  t.key(t.K.back);
+  ok('inglés: pistas del VOD');
+
+  // login sin Client ID en inglés
+  t = boot({ lang: 'en', clientId: '' });
+  t.w.CONFIG.CLIENT_ID = '';
+  await t.until(() => t.cards().length === 6, 'inicio (sin Client ID)');
+  t.focusTab('account'); t.key(t.K.ok);
+  assert.match(t.$('ls').textContent, /^Twitch Client ID missing\./);
+  assert.equal(t.$('lh').textContent, 'Back: close');
+  t.key(t.K.back);
+  ok('inglés: pantalla de cuenta sin Client ID');
+
+  // la clave ausente cae a inglés y, si tampoco existe, muestra la clave
+  assert.equal(t.w.I18n.t('no.existe'), 'no.existe');
+  assert.equal(t.w.I18n.t('error.retry', { msg: 'x' }), 'Error: x — press OK on the tab to retry');
+  assert.equal(t.w.I18n.compact(70700), '70.7K');
+  assert.equal(t.w.I18n.thousands(1234567), '1,234,567');
+  t.w.I18n.setLang('es');
+  assert.equal(t.w.I18n.compact(70700), '70,7 K');
+  assert.equal(t.w.I18n.thousands(1234567), '1.234.567');
+  ok('i18n: formato de números por idioma y fallback de claves');
 }
 
 console.log('\nOK');

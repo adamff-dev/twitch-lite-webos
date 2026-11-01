@@ -18,6 +18,12 @@ Sin sesión la app funciona (Inicio, Categorías, Buscar); Siguiendo y Vídeos p
 
 Mientras ves un directo con la sesión iniciada, cada 60 s se comprueba si hay un cofre de bonificación y se reclama solo. En el reproductor aparece un aviso (`+50 puntos · 1.234`). Para desactivarlo: `localStorage.setItem('ptsOff','1')`.
 
+## Idioma
+
+Interfaz en **español** e **inglés**. Si no has elegido nada, sigue el idioma del sistema (si empieza por `es`, español; en cualquier otro caso, inglés). El botón **ES / EN** de la barra superior cambia el idioma al momento y la elección se recuerda.
+
+Las traducciones están en `app/js/i18n.js`. Para añadir un idioma, copia el bloque `en` y tradúcelo.
+
 ## Pantallas
 
 | Pestaña | Contenido |

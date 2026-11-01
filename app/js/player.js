@@ -16,8 +16,8 @@
   function store(k, val) {
     try { if (val === undefined) return localStorage.getItem(k); localStorage.setItem(k, val); } catch (e) {}
   }
-  function fmtN(n) { return String(Math.round(+n || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, '.'); }
-  function fmt(n) { return n >= 1000 ? (n / 1000).toFixed(1).replace('.', ',') + ' K' : String(n); }
+  function fmtN(n) { return I18n.thousands(n); }
+  function fmt(n) { return I18n.compact(n); }
   function two(n) { return n < 10 ? '0' + n : String(n); }
   function hms(s) {
     s = Math.max(0, Math.floor(s || 0));
@@ -33,18 +33,18 @@
     clearTimeout(toastT);
     toastT = setTimeout(function () { toast.hidden = true; }, ms || 3000);
   }
-  function claimed(earned, total) { flash('+' + fmtN(earned) + ' puntos' + (total ? ' · ' + fmtN(total) : ''), 8000); }
+  function claimed(earned, total) { flash(I18n.t('player.points', { n: fmtN(earned) }) + (total ? ' · ' + fmtN(total) : ''), 8000); }
   function startPoints() { if (isOpen && !isVod && item) Points.start(item.login, claimed); }
 
   /* ---------- chat ---------- */
   function applyChat() { el.classList[Chat.isOn() && isOpen && !isVod ? 'add' : 'remove']('chat'); }
   function startChat() { if (isOpen && !isVod && item) Chat.attach(item.login); applyChat(); }
   function toggleChat() {
-    if (isVod) { flash('El chat solo está disponible en directos'); return; }
+    if (isVod) { flash(I18n.t('player.chatLiveOnly')); return; }
     var on = Chat.toggle();
     if (on) Chat.attach(item.login);
     applyChat();
-    flash(on ? 'Chat activado' : 'Chat desactivado', 1500);
+    flash(I18n.t(on ? 'player.chatOn' : 'player.chatOff'), 1500);
   }
 
   /* ---------- barra, estado y overlay ---------- */
@@ -53,7 +53,7 @@
     if (seekTarget !== null) {
       var d = seekTarget - seekFrom;
       t = (d >= 0 ? '▶▶ +' : '◀◀ −') + hms(Math.abs(d)) + '   →   ' + hms(seekTarget);
-    } else if (v.paused && v.getAttribute('src')) t = '⏸  En pausa';
+    } else if (v.paused && v.getAttribute('src')) t = I18n.t('player.paused');
     st.textContent = t;
     st.hidden = !t;
   }
@@ -85,14 +85,12 @@
     } else {
       $('oname').textContent = item.name + (item.game ? ' · ' + item.game : '');
       if (item.title) parts.push(item.title);
-      parts.push(fmt(item.viewers) + ' espectadores');
+      parts.push(I18n.t('card.viewers', { n: fmt(item.viewers) }));
     }
     if (quals[qi]) parts.push(quals[qi].name);
     $('oinfo').textContent = parts.join(' — ');
     bar.hidden = tm.hidden = !isVod;
-    $('ohint').textContent = isVod
-      ? 'OK pausa · ▲ calidad · ◀ ▶ saltar (pulsa rápido para ir más lejos) · Atrás salir'
-      : 'OK pausa · ▲ calidad · ▼ chat · Atrás salir';
+    $('ohint').textContent = I18n.t(isVod ? 'player.hintVod' : 'player.hintLive');
   }
 
   /* ---------- carga ---------- */
@@ -115,7 +113,7 @@
 
   function load() {
     var id = ++loadId;
-    say('Cargando…');
+    say(I18n.t('loading'));
     stop();
     Api.playback(item).then(function (r) {
       if (id !== loadId) return;
@@ -125,7 +123,7 @@
       play();
     }).catch(function (e) {
       if (id !== loadId) return;
-      say(e.offline ? (isVod ? 'Vídeo no disponible' : 'El canal está desconectado') : 'Error: ' + e.message);
+      say(e.offline ? I18n.t(isVod ? 'player.vodUnavailable' : 'player.offline') : I18n.t('player.error', { msg: e.message }));
     });
   }
 
@@ -187,7 +185,7 @@
   }
 
   function openMenu() {
-    if (quals.length < 2) { flash('No hay otras calidades', 1500); return; }
+    if (quals.length < 2) { flash(I18n.t('player.noQualities'), 1500); return; }
     menu = true; mi = qi; qm.hidden = false; renderMenu();
   }
 
@@ -202,7 +200,7 @@
         qi = mi; store('tq', quals[qi].name);
         if (isVod) resumeAt = seekTarget !== null ? seekTarget : v.currentTime;   // no perder la posición al cambiar de calidad
         resetSeek();
-        menu = false; qm.hidden = true; say('Cargando…'); play();
+        menu = false; qm.hidden = true; say(I18n.t('loading')); play();
         return true;
       }
       else if (k === 'back' || k === 'green') { menu = false; qm.hidden = true; return true; }
@@ -221,7 +219,7 @@
   }
 
   v.addEventListener('playing', function () { retried = false; say(''); renderState(); });
-  v.addEventListener('waiting', function () { if (isOpen) say('Cargando…'); });
+  v.addEventListener('waiting', function () { if (isOpen) say(I18n.t('loading')); });
   v.addEventListener('timeupdate', updTime);
   v.addEventListener('loadedmetadata', applyResume);
   v.addEventListener('canplay', applyResume);
@@ -233,11 +231,11 @@
     else if (qi > 0 && quals.length) {                          // esa calidad no se puede reproducir: vuelve a Auto
       badQ[quals[qi].name] = true;
       keepPosition();
-      flash('La calidad ' + quals[qi].name + ' no está disponible en este vídeo. Usando Auto', 4000);
+      flash(I18n.t('player.qualityFallback', { q: quals[qi].name }), 4000);
       qi = 0; retried = false;
-      say('Cargando…'); play();
+      say(I18n.t('loading')); play();
     }
-    else say('No se pudo reproducir');
+    else say(I18n.t('player.cantPlay'));
   });
 
   // Si la app pasa a segundo plano, se libera el decoder y se cierran chat y puntos; al volver se retoma todo.

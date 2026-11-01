@@ -9,12 +9,13 @@
 <body>
 <div id="app">
   <div id="top">
-    <span class="f tab" data-tab="streams">Inicio</span>
-    <span class="f tab" data-tab="games">Categorías</span>
-    <span class="f tab" data-tab="following">Siguiendo</span>
-    <span class="f tab" data-tab="videos">Vídeos</span>
-    <input class="f tab" id="q" data-tab="search" type="text" placeholder="Buscar canal…" autocomplete="off">
+    <span class="f tab" data-tab="streams" data-i18n="tab.home">Inicio</span>
+    <span class="f tab" data-tab="games" data-i18n="tab.games">Categorías</span>
+    <span class="f tab" data-tab="following" data-i18n="tab.following">Siguiendo</span>
+    <span class="f tab" data-tab="videos" data-i18n="tab.videos">Vídeos</span>
+    <input class="f tab" id="q" data-tab="search" type="text" data-i18n-placeholder="tab.search" placeholder="Buscar canal…" autocomplete="off">
     <span id="crumb"></span>
+    <span class="f tab" id="lang" data-tab="lang" title="Idioma / Language">ES</span>
     <span class="f tab" id="acct" data-tab="account">Entrar</span>
   </div>
   <div id="content">
@@ -33,7 +34,7 @@
     <div id="oinfo"></div>
     <div id="obar"><div id="ofill"></div></div>
     <div id="otime"></div>
-    <div id="ohint">OK: calidad · Play/Pause · Atrás: salir</div>
+    <div id="ohint" data-i18n="player.hintLive">OK pausa · ▲ calidad · ▼ chat · Atrás salir</div>
   </div>
   <div id="qmenu" hidden></div>
 </div>
@@ -42,13 +43,14 @@
   <div id="lbox">
     <div id="lqr"></div>
     <div id="lside">
-      <div id="lt">Cuenta de Twitch</div>
+      <div id="lt" data-i18n="account.title">Cuenta de Twitch</div>
       <div id="lc"></div>
       <div id="ls"></div>
       <div id="lh"></div>
     </div>
   </div>
 </div>
+<script src="js/i18n.js"></script>
 <script src="js/config.js"></script>
 <script src="js/api.js"></script>
 <script src="js/auth.js"></script>

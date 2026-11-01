@@ -86,7 +86,7 @@
     var s;
     try { s = new WebSocket(WS_URL); } catch (e) { schedule(); return; }
     ws = s;
-    status('Conectando al chat…');
+    status(I18n.t('chat.connecting'));
     s.onopen = function () {
       if (ws !== s || !chan) return;                      // llegó tarde: ya se cerró o se cambió de canal
       retry = 0;
@@ -110,7 +110,7 @@
     };
     s.onclose = function () {
       if (ws === s) ws = null;
-      if (on && chan) { status('Reconectando al chat…'); schedule(); }
+      if (on && chan) { status(I18n.t('chat.reconnecting')); schedule(); }
     };
   }
   function disconnect() {

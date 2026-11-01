@@ -9,7 +9,7 @@
 
   function timeout(p, ms) {
     return new Promise(function (res, rej) {
-      var t = setTimeout(function () { rej(new Error('Tiempo de espera agotado')); }, ms);
+      var t = setTimeout(function () { rej(new Error(I18n.t('error.timeout'))); }, ms);
       p.then(function (v) { clearTimeout(t); res(v); }, function (e) { clearTimeout(t); rej(e); });
     });
   }
@@ -102,7 +102,7 @@
       'videos(first:' + PAGE + after(cursor) + ',type:ARCHIVE,sort:TIME){edges{cursor node{id title lengthSeconds viewCount createdAt previewThumbnailURL(width:440,height:248) game{displayName}}}}}}')
       .then(function (d) {
         var u = d.user;
-        if (!u) throw new Error('Canal no encontrado');
+        if (!u) throw new Error(I18n.t('error.channelNotFound'));
         var edges = u.videos ? u.videos.edges : [], items = [];
         if (u.stream) {
           items.push({
@@ -113,7 +113,7 @@
         edges.forEach(function (e) {
           var n = e.node;
           items.push({
-            type: 'video', id: n.id, name: u.displayName, title: n.title || '(sin título)',
+            type: 'video', id: n.id, name: u.displayName, title: n.title || I18n.t('video.untitled'),
             game: n.game ? n.game.displayName : '', views: n.viewCount || 0, duration: n.lengthSeconds || 0,
             date: String(n.createdAt || '').slice(0, 10), thumb: n.previewThumbnailURL || ''
           });
