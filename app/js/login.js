@@ -54,6 +54,14 @@
       mode = 'in'; qr.innerHTML = ''; code.textContent = '';
       stat.textContent = 'Sesión iniciada como ' + (Auth.login() || 'tu cuenta');
       hint.textContent = 'OK: cerrar sesión · Atrás: volver';
+      Auth.avatar(300).then(function (u) {
+        if (u && isOpen && (mode === 'in' || mode === 'confirm')) {
+          qr.innerHTML = '';
+          var img = document.createElement('img');
+          img.src = u;
+          qr.appendChild(img);
+        }
+      });
     } else begin();
   }
 

@@ -171,7 +171,19 @@
   }
 
   /* ---------- cuenta ---------- */
-  function refreshAcct() { acct.textContent = Auth.isLoggedIn() ? (Auth.login() || 'Cuenta') : 'Entrar'; }
+  function setAcct(img) {
+    acct.textContent = Auth.isLoggedIn() ? (Auth.login() || 'Cuenta') : 'Entrar';
+    if (img) {
+      var el = document.createElement('img');
+      el.className = 'av'; el.src = img;
+      acct.insertBefore(el, acct.firstChild);
+    }
+  }
+  function refreshAcct() {
+    setAcct('');
+    if (!Auth.isLoggedIn()) return;
+    Auth.avatar(70).then(function (u) { if (u && Auth.isLoggedIn()) setAcct(u); });
+  }
 
   function onAuthChange() {
     refreshAcct();

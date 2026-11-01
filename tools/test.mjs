@@ -109,6 +109,7 @@ function net(o = {}) {
       if (url.includes('streams/followed')) return res({ data: [1, 2].map((i) => ({ user_login: 'chan' + i, user_name: 'Chan' + i, game_name: 'Juego', title: 'Sig ' + i, viewer_count: 50 * i, thumbnail_url: 'http://t/{width}x{height}.jpg' })), pagination: {} });
       if (url.includes('channels/followed') && url.includes('after=')) return res({ data: [], pagination: {} });
       if (url.includes('channels/followed')) return res({ data: [1, 2].map((i) => ({ broadcaster_id: String(i), broadcaster_login: 'chan' + i, broadcaster_name: 'Chan' + i })), pagination: { cursor: 'nx' } });
+      if (url.endsWith('/helix/users')) return res({ data: [{ id: '42', login: 'adam', profile_image_url: 'http://avatar/self-300x300.png' }] });
       if (url.includes('/users?')) return res({ data: [1, 2].map((i) => ({ id: String(i), profile_image_url: 'http://avatar/' + i })) });
     }
     return res({ message: 'unmocked ' + url }, 404);
@@ -242,7 +243,13 @@ function boot(o = {}) {
   assert.equal(fc.cursor, 'nx');
   ok('Helix: streams/followed y channels/followed (+avatares)');
 
+  assert.equal(await w.Auth.avatar(70), 'http://avatar/self-70x70.png');
+  assert.equal(await w.Auth.avatar(300), 'http://avatar/self-300x300.png');
+  assert.equal(t.N.calls.filter((c) => c.url.endsWith('/helix/users')).length, 1, 'la foto se cachea');
+  ok('foto de perfil: Helix /users, tamaño a medida y cacheada');
+
   w.Auth.logout();
+  assert.equal(await w.Auth.avatar(70), '', 'sin sesión no hay foto');
   assert.equal(w.Auth.isLoggedIn(), false);
   assert.equal(w.localStorage.getItem('tauth'), null);
   assert.ok(t.N.calls.some((c) => c.url.endsWith('/oauth2/revoke')));
@@ -395,6 +402,9 @@ function boot(o = {}) {
   assert.match($('ls').textContent, /Esperando autorización/);
   await until(() => $('login').hidden, 'cierre del login', 6000);
   assert.equal($('acct').textContent, 'adam');
+  await until(() => $('acct').querySelector('img.av'), 'avatar en el botón');
+  assert.equal($('acct').querySelector('img.av').getAttribute('src'), 'http://avatar/self-70x70.png');
+  assert.equal($('acct').textContent, 'adam', 'el nombre sigue ahí junto a la foto');
   await until(() => cards().length === 2, 'siguiendo tras login');
   assert.notEqual(focused().id, 'acct', 'el foco no debe quedar en el botón de cuenta');
   assert.equal(d.querySelector('#grid .card .ti').textContent, 'Sig 1');
@@ -446,6 +456,8 @@ function boot(o = {}) {
   // Cerrar sesión: nunca con un OK suelto ni con pulsaciones repetidas
   focusTab('account'); key(K.ok);
   assert.match($('ls').textContent, /Sesión iniciada como adam/);
+  await until(() => $('lqr').querySelector('img'), 'foto en la pantalla de cuenta');
+  assert.equal($('lqr').querySelector('img').getAttribute('src'), 'http://avatar/self-300x300.png');
   key(K.ok); key(K.ok);                                      // OK inmediatos: se ignoran
   assert.equal(w.Auth.isLoggedIn(), true, 'un OK inmediato no debe cerrar la sesión');
   await sleep(750);

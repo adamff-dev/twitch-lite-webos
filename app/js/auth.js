@@ -23,6 +23,18 @@
 
   function isLoggedIn() { return !!st.access; }
   function login() { return st.login || ''; }
+
+  // Foto de perfil del usuario (Helix /users sin parámetros = el propio). size: lado en px (Twitch sirve 70, 150, 300...).
+  function sized(url, size) { return url ? String(url).replace(/-\d+x\d+(\.\w+)$/, '-' + size + 'x' + size + '$1') : ''; }
+  function avatar(size) {
+    if (st.avatar) return Promise.resolve(sized(st.avatar, size));
+    if (!st.access) return Promise.resolve('');
+    return helix('users').then(function (j) {
+      var u = j.data && j.data[0];
+      if (u && u.profile_image_url) { st.avatar = u.profile_image_url; save(); }
+      return sized(st.avatar, size);
+    }, function () { return ''; });
+  }
   function token() { return st.access || ''; }
 
   function clear() { st = {}; try { localStorage.removeItem('tauth'); } catch (e) {} }
@@ -156,7 +168,7 @@
   }
 
   w.Auth = {
-    init: init, isLoggedIn: isLoggedIn, login: login, token: token, logout: logout, begin: begin, poll: poll,
+    init: init, isLoggedIn: isLoggedIn, login: login, token: token, avatar: avatar, logout: logout, begin: begin, poll: poll,
     followedStreams: followedStreams, followedChannels: followedChannels
   };
 })(window);
