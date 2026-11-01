@@ -221,7 +221,6 @@
   function activate(el) {
     var tab = el.getAttribute('data-tab');
     if (tab) {
-      if (tab === 'lang') { I18n.toggle(); return; }     // selector ES/EN
       if (tab === 'search') { qin.focus(); return; }     // abre el teclado en pantalla
       if (tab === 'account') { Login.open(onAuthChange); return; }
       switchTab(tab);
@@ -284,9 +283,7 @@
   });
 
   /* ---------- idioma ---------- */
-  var langEl = $('lang');
   function relang() {
-    langEl.textContent = I18n.lang().toUpperCase();
     refreshAcct();
     if (!view) return;
     var inGrid = foc && grid.contains(foc), keep = view.focus;

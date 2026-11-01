@@ -1,5 +1,5 @@
-/* Traducciones (español e inglés). Idioma: el elegido por el usuario (selector ES/EN) o, si no hay ninguno,
-   el del sistema: si empieza por "es" se usa español, en cualquier otro caso inglés.
+/* Traducciones (español e inglés). El idioma es el del sistema: si empieza por "es" se usa español, en cualquier
+   otro caso inglés. Si el sistema cambia de idioma con la app abierta (evento languagechange), se actualiza sola.
    Claves con puntos; los marcadores {nombre} se sustituyen con t(clave, {nombre: valor}). */
 (function (w) {
   'use strict';
@@ -128,11 +128,7 @@
 
   var lang = 'en', listeners = [];
 
-  function saved() { try { return localStorage.getItem('lang'); } catch (e) { return null; } }
-
   function detect() {
-    var s = saved();
-    if (s === 'es' || s === 'en') return s;
     var n = String(navigator.language || navigator.userLanguage || 'en').toLowerCase();
     return n.indexOf('es') === 0 ? 'es' : 'en';
   }
@@ -154,10 +150,10 @@
     document.documentElement.lang = lang;
   }
 
-  function setLang(l) {
-    if (l !== 'es' && l !== 'en') return;
+  function update() {
+    var l = detect();
+    if (l === lang) return;
     lang = l;
-    try { localStorage.setItem('lang', l); } catch (e) {}
     apply();
     for (var i = 0; i < listeners.length; i++) listeners[i]();
   }
@@ -178,12 +174,13 @@
 
   lang = detect();
   apply();
+  try { localStorage.removeItem('lang'); } catch (e) {}      // preferencia manual de versiones anteriores: ya no se usa
+  w.addEventListener('languagechange', update);
 
   w.I18n = {
     t: t,
     lang: function () { return lang; },
-    setLang: setLang,
-    toggle: function () { setLang(lang === 'es' ? 'en' : 'es'); },
+    update: update,
     apply: apply,
     thousands: thousands,
     compact: compact,

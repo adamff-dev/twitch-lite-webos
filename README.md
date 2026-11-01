@@ -20,7 +20,7 @@ Mientras ves un directo con la sesión iniciada, cada 60 s se comprueba si hay u
 
 ## Idioma
 
-Interfaz en **español** e **inglés**. Si no has elegido nada, sigue el idioma del sistema (si empieza por `es`, español; en cualquier otro caso, inglés). El botón **ES / EN** de la barra superior cambia el idioma al momento y la elección se recuerda.
+Interfaz en **español** e **inglés**, según el idioma del sistema de la TV (si empieza por `es`, español; en cualquier otro caso, inglés). No hay ningún ajuste: si cambias el idioma de la TV con la app abierta, se actualiza sola.
 
 Las traducciones están en `app/js/i18n.js`. Para añadir un idioma, copia el bloque `en` y tradúcelo.
 

@@ -127,8 +127,10 @@ function boot(o = {}) {
   const N = o.net || net(o);
   w.fetch = N.fetch;
   for (const [k, v] of Object.entries(o.ls || {})) w.localStorage.setItem(k, v);
-  const lang = o.lang === undefined ? 'es' : o.lang;
-  if (lang) w.localStorage.setItem('lang', lang);
+  // idioma del sistema simulado: por defecto es-ES (lang: null = el de jsdom, en-US)
+  const navLang = o.lang === undefined ? 'es-ES' : ({ es: 'es-ES', en: 'en-US' }[o.lang] || o.lang);
+  w.__navLang = navLang;
+  if (navLang) Object.defineProperty(w.navigator, 'language', { get: () => w.__navLang, configurable: true });
   const P = w.HTMLMediaElement.prototype;
   P.load = () => {};
   Object.defineProperty(P, 'paused', { get() { return this.__p !== false; }, configurable: true });
@@ -779,13 +781,18 @@ function boot(o = {}) {
 {
   const SESSION = { tauth: JSON.stringify({ access: 'acc1', refresh: 'r', userId: '42', login: 'adam', cid: 'ue6666qo983tsx6so1t0vnawi233wa' }) };
 
-  // detección: sin preferencia guardada, según el idioma del sistema
+  // el idioma es el del sistema: es-* → español, cualquier otro → inglés
   let t = boot({ lang: null });
   assert.equal(t.w.I18n.lang(), 'en', 'jsdom informa en-US: inglés');
-  t = boot({ lang: null, beforeScripts: (w) => Object.defineProperty(w.navigator, 'language', { get: () => 'es-ES' }) });
-  assert.equal(t.w.I18n.lang(), 'es', 'un sistema en es-ES arranca en español');
+  for (const [loc, want] of [['es-ES', 'es'], ['es-MX', 'es'], ['ES', 'es'], ['en-GB', 'en'], ['fr-FR', 'en'], ['de', 'en']]) {
+    t = boot({ lang: loc });
+    assert.equal(t.w.I18n.lang(), want, loc);
+  }
+  t = boot({ lang: 'es-ES' });
   assert.equal(t.$('acct').textContent, 'Entrar');
-  ok('idioma: sin preferencia sigue al sistema (es-* → español, resto → inglés)');
+  assert.equal(t.d.documentElement.lang, 'es');
+  assert.equal(t.d.getElementById('lang'), null, 'ya no hay botón de idioma');
+  ok('idioma: sigue al sistema (es-* → español, resto → inglés) y no hay botón');
 
   // interfaz en inglés
   t = boot({ lang: 'en' });
@@ -794,7 +801,6 @@ function boot(o = {}) {
   assert.deepEqual(tabs.slice(0, 4), ['Home', 'Categories', 'Following', 'Videos']);
   assert.equal(t.$('q').getAttribute('placeholder'), 'Search channel…');
   assert.equal(t.$('acct').textContent, 'Log in');
-  assert.equal(t.$('lang').textContent, 'EN');
   assert.equal(t.d.documentElement.lang, 'en');
   ok('inglés: pestañas, buscador, botón de cuenta e idioma del documento');
 
@@ -802,17 +808,26 @@ function boot(o = {}) {
   assert.match(t.$('msg').textContent, /^Log in with "Log in" \(top right\)/);
   ok('inglés: mensajes de vista vacía');
 
-  // selector ES/EN: cambia la interfaz y recuerda la elección
-  t.focusTab('lang'); t.key(t.K.ok);
+  // si el sistema cambia de idioma con la app abierta, la interfaz se actualiza sola
+  t.w.__navLang = 'es-ES';
+  t.w.dispatchEvent(new t.w.Event('languagechange'));
   assert.equal(t.w.I18n.lang(), 'es');
-  assert.equal(t.w.localStorage.getItem('lang'), 'es');
   assert.equal(t.$('acct').textContent, 'Entrar');
-  assert.equal(t.$('lang').textContent, 'ES');
-  assert.equal(t.focused().id, 'lang', 'el foco se queda en el selector');
+  assert.equal(t.d.documentElement.lang, 'es');
   assert.match(t.$('msg').textContent, /^Inicia sesión con "Entrar"/, 'el mensaje vacío se traduce al cambiar');
-  t.focusTab('lang'); t.key(t.K.ok);
-  assert.equal(t.w.I18n.lang(), 'en');
-  ok('idioma: el selector ES/EN cambia la interfaz en caliente y se recuerda');
+  assert.deepEqual([...t.d.querySelectorAll('#top .tab')].slice(0, 4).map((n) => n.textContent), ['Inicio', 'Categorías', 'Siguiendo', 'Vídeos']);
+  t.w.dispatchEvent(new t.w.Event('languagechange'));           // sin cambio real: no hace nada
+  assert.equal(t.w.I18n.lang(), 'es');
+  t.w.__navLang = 'en-US';
+  t.w.dispatchEvent(new t.w.Event('languagechange'));
+  assert.equal(t.$('acct').textContent, 'Log in');
+  ok('idioma: un cambio del idioma del sistema (languagechange) actualiza la interfaz en caliente');
+
+  // una preferencia manual de versiones anteriores se ignora y se borra
+  t = boot({ lang: 'es-ES', ls: { lang: 'en' } });
+  assert.equal(t.w.I18n.lang(), 'es', 'manda el sistema, no la preferencia antigua');
+  assert.equal(t.w.localStorage.getItem('lang'), null, 'la preferencia antigua se elimina');
+  ok('idioma: la preferencia guardada por el antiguo botón se ignora y se elimina');
 
   // tarjetas de vídeo: el recuento de visualizaciones usa el idioma activo
   t = boot({ lang: 'en', ls: SESSION });
@@ -863,7 +878,8 @@ function boot(o = {}) {
   assert.equal(t.w.I18n.t('error.retry', { msg: 'x' }), 'Error: x — press OK on the tab to retry');
   assert.equal(t.w.I18n.compact(70700), '70.7K');
   assert.equal(t.w.I18n.thousands(1234567), '1,234,567');
-  t.w.I18n.setLang('es');
+  t.w.__navLang = 'es-ES';
+  t.w.dispatchEvent(new t.w.Event('languagechange'));
   assert.equal(t.w.I18n.compact(70700), '70,7 K');
   assert.equal(t.w.I18n.thousands(1234567), '1.234.567');
   ok('i18n: formato de números por idioma y fallback de claves');
