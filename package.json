@@ -1,0 +1,14 @@
+{
+  "name": "light-webos-twitch",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node tools/build.mjs",
+    "package": "node tools/build.mjs && ares-package dist -o out",
+    "test": "node tools/test.mjs"
+  },
+  "devDependencies": {
+    "jsdom": "^29.1.1"
+  }
+}

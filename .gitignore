@@ -1,0 +1,8 @@
+node_modules/
+dist/
+out/
+*.ipk
+.venv/
+*.local.js
+.DS_Store
+Thumbs.db
