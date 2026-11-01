@@ -127,9 +127,21 @@ function boot(o = {}) {
   const N = o.net || net(o);
   w.fetch = N.fetch;
   for (const [k, v] of Object.entries(o.ls || {})) w.localStorage.setItem(k, v);
-  w.HTMLMediaElement.prototype.load = () => {};
-  w.HTMLMediaElement.prototype.pause = () => {};
-  w.HTMLMediaElement.prototype.play = () => Promise.resolve();
+  const P = w.HTMLMediaElement.prototype;
+  P.load = () => {};
+  Object.defineProperty(P, 'paused', { get() { return this.__p !== false; }, configurable: true });
+  Object.defineProperty(P, 'currentTime', { get() { return this.__t || 0; }, set(x) { this.__t = x; this.__seeks = (this.__seeks || 0) + 1; }, configurable: true });
+  Object.defineProperty(P, 'duration', { get() { return this.__d ?? NaN; }, configurable: true });
+  // los eventos de medios son asíncronos en los navegadores (el handler ve ya el estado final)
+  P.pause = function () { this.__p = true; setTimeout(() => this.dispatchEvent(new w.Event('pause')), 0); };
+  P.play = function () { this.__p = false; setTimeout(() => this.dispatchEvent(new w.Event('play')), 0); return Promise.resolve(); };
+  const sockets = [];
+  w.WebSocket = class {
+    constructor(url) { this.url = url; this.sent = []; this.closed = false; sockets.push(this); setTimeout(() => this.onopen && this.onopen(), 0); }
+    send(m) { this.sent.push(m); }
+    close() { this.closed = true; if (this.onclose) this.onclose(); }
+    emit(data) { if (this.onmessage) this.onmessage({ data }); }
+  };
   // layout falso: tarjetas en rejilla de 4 columnas y pestañas en fila
   const box = (l, t, wd, h) => ({ left: l, top: t, width: wd, height: h, right: l + wd, bottom: t + h });
   w.Element.prototype.getBoundingClientRect = function () {
@@ -155,7 +167,7 @@ function boot(o = {}) {
     const t0 = Date.now();
     while (!fn()) { if (Date.now() - t0 > ms) throw new Error('timeout esperando: ' + what); await sleep(10); }
   };
-  const K = { left: 37, up: 38, right: 39, down: 40, ok: 13, back: 461, yellow: 405 };
+  const K = { left: 37, up: 38, right: 39, down: 40, ok: 13, back: 461, yellow: 405, green: 404, ff: 417, rw: 412, pgup: 33, pgdn: 34 };
   const focused = () => d.querySelector('.foc');
   const highlighted = () => d.querySelectorAll('#app .foc').length;
   const cards = () => d.querySelectorAll('#grid .card');
@@ -164,7 +176,7 @@ function boot(o = {}) {
     for (let i = 0; i < 8 && focused().getAttribute('data-tab') !== name; i++) key(K.right);
     assert.equal(focused().getAttribute('data-tab'), name, 'no se pudo enfocar la pestaña ' + name);
   };
-  return { w, d, $, key, K, until, focused, cards, focusTab, N, errors, highlighted };
+  return { w, d, $, key, K, until, focused, cards, focusTab, N, errors, highlighted, sockets };
 }
 
 /* ---------- 2) lógica de red ---------- */
@@ -373,7 +385,7 @@ function boot(o = {}) {
   await until(() => d.getElementById('v').getAttribute('src'), 'src del vídeo');
   assert.match($('v').getAttribute('src'), /hls\/chan1\.m3u8/);
   assert.equal($('obar').hidden, true, 'un directo no muestra barra de progreso');
-  key(K.ok); assert.equal($('qmenu').hidden, false, 'OK abre el menú de calidad');
+  key(K.up); assert.equal($('qmenu').hidden, false, '▲ abre el menú de calidad');
   key(K.down); key(K.ok);
   assert.match($('v').getAttribute('src'), /AAA\.m3u8/);
   key(K.back); assert.equal(w.Player.isOpen(), false);
@@ -478,5 +490,233 @@ function boot(o = {}) {
   assert.deepEqual(t.errors, [], 'errores de JS en la página');
   ok('sin errores de JavaScript durante los flujos');
 }
+/* ---------- 6) controles del reproductor ---------- */
+{
+  const t = boot();
+  const { $, key, K, until, cards, w } = t;
+  await until(() => cards().length === 6, 'inicio');
+  key(K.ok);
+  await until(() => $('v').getAttribute('src'), 'src del directo');
+  const v = $('v');
+
+  assert.equal(v.paused, false);
+  key(K.ok);                                                  // OK = pausa
+  assert.equal(v.paused, true);
+  await until(() => !$('pstate').hidden, 'indicador de pausa');
+  assert.match($('pstate').textContent, /En pausa/);
+  assert.equal($('qmenu').hidden, true, 'OK ya no abre el menú de calidad');
+  await sleep(4300);
+  assert.equal($('ovl').hidden, false, 'en pausa el panel no se oculta');
+  key(K.ok);                                                  // OK = reanudar
+  assert.equal(v.paused, false);
+  await until(() => $('pstate').hidden, 'sin indicador al reanudar');
+  ok('reproductor: OK pausa y reanuda (el panel se queda visible en pausa)');
+
+  key(K.up); assert.equal($('qmenu').hidden, false);
+  key(K.down); key(K.ok);                                     // elige 1080p
+  assert.match(v.getAttribute('src'), /AAA\.m3u8/);
+  key(K.green); assert.equal($('qmenu').hidden, false, 'el botón verde también abre calidad');
+  key(K.back); assert.equal($('qmenu').hidden, true);
+  assert.equal(w.Player.isOpen(), true, 'Atrás en el menú solo cierra el menú');
+  ok('reproductor: ▲/verde abren calidad, Atrás solo cierra el menú');
+
+  // ▼ = chat (desactivado por defecto)
+  assert.equal(w.Chat.isOn(), false);
+  assert.equal(t.sockets.length, 0, 'sin chat no hay conexión');
+  key(K.down);
+  assert.equal(w.Chat.isOn(), true);
+  assert.equal($('chat').hidden, false);
+  assert.ok($('player').classList.contains('chat'));
+  await until(() => t.sockets.length === 1, 'conexión del chat');
+  assert.equal(t.sockets[0].url, 'wss://irc-ws.chat.twitch.tv:443');
+  key(K.down);
+  assert.equal(w.Chat.isOn(), false);
+  assert.equal($('chat').hidden, true);
+  assert.equal(t.sockets[0].closed, true, 'al ocultar el chat se cierra la conexión');
+  assert.equal(w.localStorage.getItem('chat'), '0');
+  key(K.back);
+  ok('reproductor: ▼ muestra/oculta el chat y solo conecta mientras está visible');
+
+  // VOD: saltos acelerados
+  w.Player.open({ type: 'video', id: '901', name: 'Chan1', title: 'VOD', date: '', game: '', duration: 3725 }, () => {});
+  await until(() => v.getAttribute('src'), 'src del VOD');
+  v.__d = 3725; v.__t = 100; v.__seeks = 0;
+  key(K.right);
+  assert.match($('pstate').textContent, /▶▶ \+0:10\s+→\s+1:50/);
+  assert.equal(v.__seeks, 0, 'el salto no se aplica hasta que dejas de pulsar');
+  await sleep(600);
+  assert.equal(v.__t, 110); assert.equal(v.__seeks, 1);
+  assert.equal($('pstate').hidden, true);
+
+  await sleep(800);                                           // la racha se reinicia tras 700 ms sin pulsar
+  v.__t = 1000; v.__seeks = 0;
+  for (let i = 0; i < 5; i++) key(K.right);                   // 10+10+30+30+60 = 140 s
+  assert.match($('pstate').textContent, /▶▶ \+2:20\s+→\s+19:00/);
+  await sleep(600);
+  assert.equal(v.__t, 1140);
+  assert.equal(v.__seeks, 1, 'cinco pulsaciones rápidas = un solo seek');
+
+  await sleep(800);                                           // la racha se reinicia si esperas
+  v.__t = 1000;
+  key(K.left); await sleep(600);
+  assert.equal(v.__t, 990);
+  v.__t = 5; key(K.left); await sleep(600);
+  assert.equal(v.__t, 0, 'no baja de 0');
+  v.__t = 3720; key(K.right); await sleep(600);
+  assert.equal(v.__t, 3723, 'no pasa del final');
+  v.__t = 500; await sleep(800);
+  key(K.ff); await sleep(600);
+  assert.equal(v.__t, 530, 'adelante rápido salta 30 s como mínimo');
+  key(K.rw); await sleep(600);
+  assert.equal(v.__t, 500);
+  ok('VOD: saltos acelerados (10→10→30→30→60 s…), un solo seek y límites 0 / final');
+
+  key(K.down);
+  assert.match($('ptoast').textContent, /solo está disponible en directos/);
+  assert.equal(t.sockets.length, 1, 'un VOD no abre chat');
+  key(K.back);
+  ok('VOD: no hay chat');
+}
+
+/* ---------- 7) chat optimizado ---------- */
+{
+  const line = (name, text, tags = '') => `${tags ? '@' + tags + ' ' : ''}:${name}!${name}@${name}.tmi.twitch.tv PRIVMSG #chan1 :${text}`;
+
+  // parseo
+  const { w: pw } = boot();
+  const P = (l) => J(pw.Chat.parse(l));
+  assert.deepEqual(P(line('foo', 'hola: mundo')), { n: 'foo', c: '#bf94ff', t: 'hola: mundo', a: false });
+  assert.deepEqual(P(line('foo', 'hola', 'color=#FF4500;display-name=Fo\\so;id=1')), { n: 'Fo o', c: '#FF4500', t: 'hola', a: false });
+  assert.equal(P(line('foo', 'x', 'color=#0000FF')).c, '#bf94ff', 'un color ilegible sobre fondo oscuro se sustituye');
+  assert.deepEqual(P(line('foo', '\u0001ACTION baila\u0001')), { n: 'foo', c: '#bf94ff', t: 'baila', a: true });
+  assert.equal(P(line('foo', 'a'.repeat(500))).t.length, 161);
+  assert.equal(pw.Chat.parse(':tmi.twitch.tv 001 justinfan1 :Welcome'), null);
+  assert.equal(pw.Chat.parse('@a=b :x PRIVMSG'), null);
+  ok('chat: parseo de tags, /me, colores ilegibles y mensajes largos');
+
+  const t = boot({ ls: { chat: '1' } });                       // chat activado por preferencia
+  const { $, key, K, until, cards, w } = t;
+  await until(() => cards().length === 6, 'inicio');
+  assert.equal(t.sockets.length, 0, 'no conecta hasta que hay un directo');
+  key(K.ok);
+  await until(() => t.sockets.length === 1 && t.sockets[0].sent.length >= 4, 'conexión y registro');
+  const s = t.sockets[0];
+  assert.deepEqual(s.sent.slice(0, 1), ['CAP REQ :twitch.tv/tags']);
+  assert.ok(s.sent.some((m) => /^NICK justinfan\d+$/.test(m)));
+  assert.ok(s.sent.includes('JOIN #chan1'));
+  s.emit('PING :tmi.twitch.tv\r\n');
+  assert.equal(s.sent[s.sent.length - 1], 'PONG :tmi.twitch.tv');
+
+  s.emit(line('foo', 'hola Kappa', 'color=#FF4500;display-name=Foo') + '\r\n');
+  await until(() => $('cmsgs').children.length === 1, 'primer mensaje');
+  const m0 = $('cmsgs').firstChild;
+  assert.equal(m0.firstChild.textContent, 'Foo:');
+  assert.equal(m0.lastChild.textContent, 'hola Kappa');
+  assert.equal(m0.firstChild.style.color, 'rgb(255, 69, 0)');
+  ok('chat: se conecta, se registra, responde al PING y pinta mensajes');
+
+  // ráfaga de 500 mensajes de golpe: se pintan como mucho 8 y se descartan los antiguos
+  const before = t.w.Chat._stats().painted;
+  s.emit(Array.from({ length: 500 }, (_, i) => line('u' + i, 'msg ' + i)).join('\r\n') + '\r\n');
+  await sleep(350);
+  const st1 = w.Chat._stats();
+  assert.ok(st1.painted - before <= 8, `pintados en la ráfaga: ${st1.painted - before}`);
+  assert.equal($('cmsgs').lastChild.lastChild.textContent, 'msg 499', 'se conservan los más recientes');
+  assert.equal(st1.queued, 0);
+  ok('chat: una ráfaga de 500 mensajes pinta como mucho 8 (los más recientes)');
+
+  // flujo sostenido: los nodos del DOM no crecen nunca (se reciclan)
+  const ids = [];
+  for (let b = 0; b < 12; b++) {
+    s.emit(Array.from({ length: 8 }, (_, i) => line('x', `lote ${b} mensaje ${i}`)).join('\r\n') + '\r\n');
+    await sleep(270);
+    ids.push(w.Chat._stats().nodes);
+  }
+  assert.ok(Math.max(...ids) <= 30, 'máximo 30 nodos');
+  assert.equal($('cmsgs').children.length, 30);
+  const firstNode = $('cmsgs').firstChild;
+  s.emit(line('y', 'otro') + '\r\n'); await sleep(300);
+  assert.equal($('cmsgs').children.length, 30);
+  assert.notEqual($('cmsgs').firstChild, firstNode, 'el nodo más antiguo se movió al final (reciclado)');
+  assert.equal($('cmsgs').lastChild, firstNode);
+  ok('chat: 30 nodos fijos reciclados (sin crear ni destruir elementos)');
+
+  // reconexión con espera
+  const n0 = t.sockets.length;
+  s.onclose();                                                 // el servidor cierra
+  assert.match($('cst').textContent, /Reconectando/);
+  await sleep(1150);
+  assert.equal(t.sockets.length, n0 + 1, 'reconecta tras 1 s');
+  ok('chat: reconexión automática tras un corte');
+
+  // al cerrar el directo se corta todo
+  const live = t.sockets[t.sockets.length - 1];
+  key(K.back);
+  assert.equal(live.closed, true);
+  assert.equal($('chat').hidden, true);
+  assert.equal($('cmsgs').children.length, 0, 'se vacía el panel');
+  await sleep(1300);
+  assert.equal(t.sockets.length, n0 + 1, 'no reconecta después de salir');
+  ok('chat: al salir del directo se cierra la conexión y no reconecta');
+}
+
+/* ---------- 8) navegación ---------- */
+{
+  const t = boot();
+  const { $, key, K, until, focused, cards, w } = t;
+  let closed = 0;
+  w.close = () => { closed++; };
+  await until(() => cards().length === 6, 'inicio');
+  const at = () => focused().getAttribute('data-i');
+  key(K.right); key(K.right); key(K.right); assert.equal(at(), '3');
+  key(K.right); assert.equal(at(), '3', 'no se sale por la derecha');
+  key(K.left); key(K.left); key(K.left); key(K.left); assert.equal(at(), '0');
+  key(K.down); assert.equal(at(), '4');
+  key(K.up); key(K.right); key(K.right); key(K.right); assert.equal(at(), '3');
+  key(K.down); assert.equal(at(), '5', 'bajar a una última fila incompleta va a su última tarjeta');
+  key(K.down); assert.equal(at(), '5');
+  ok('navegación: cuadrícula por índices (bordes, fila incompleta)');
+
+  key(K.left); key(K.up); key(K.left);                         // 4 -> 0 -> pestañas
+  assert.equal(at(), '0');
+  key(K.up);
+  assert.equal(focused().getAttribute('data-tab'), 'streams', 'subir desde la 1ª fila va a la pestaña activa');
+  key(K.right); assert.equal(focused().getAttribute('data-tab'), 'games');
+  key(K.left); key(K.left); assert.equal(focused().getAttribute('data-tab'), 'streams', 'no se sale por la izquierda');
+  key(K.down); assert.equal(at(), '0');
+  key(K.right); key(K.right); key(K.up); key(K.down);
+  assert.equal(at(), '2', 'Abajo desde las pestañas vuelve a la última tarjeta enfocada');
+  key(K.pgdn); assert.equal(at(), '5', 'Canal+ salta 3 filas (acotado al final)');
+  key(K.pgup); assert.equal(at(), '0');
+  ok('navegación: pestañas, vuelta a la última tarjeta y salto de página');
+
+  key(51);                                                     // 3 = Siguiendo
+  assert.equal(d_on(), 'Siguiendo');
+  key(49);
+  assert.equal(d_on(), 'Inicio');
+  key(52); assert.equal(d_on(), 'Vídeos'); key(50); assert.equal(d_on(), 'Categorías'); key(49);
+  function d_on() { return t.d.querySelector('.tab.on').textContent; }
+  ok('navegación: teclas 1-4 abren las pestañas');
+
+  // Atrás: cuadrícula → pestañas → (otra pestaña) Inicio → pestañas de Inicio → aviso → salir
+  await until(() => cards().length === 6, 'inicio de nuevo');
+  key(K.down);
+  key(K.back);
+  assert.equal(focused().getAttribute('data-tab'), 'streams', 'Atrás en la cuadrícula lleva a las pestañas');
+  key(51);
+  key(K.back);
+  assert.equal(d_on(), 'Inicio', 'Atrás desde otra pestaña vuelve a Inicio');
+  key(K.back);                                                 // en Inicio con el foco en la cuadrícula: a las pestañas
+  assert.equal(focused().getAttribute('data-tab'), 'streams');
+  assert.equal($('atoast').hidden, true);
+  key(K.back);                                                 // ya en las pestañas de Inicio: aviso
+  assert.equal($('atoast').hidden, false);
+  assert.match($('atoast').textContent, /Atrás otra vez/);
+  assert.equal(closed, 0);
+  key(K.back);
+  assert.equal(closed, 1, 'la segunda pulsación seguida cierra la app');
+  ok('navegación: Atrás por niveles y salir solo con doble pulsación');
+}
+
 console.log('\nOK');
 process.exit(0);

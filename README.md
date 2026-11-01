@@ -43,15 +43,37 @@ Prueba en escritorio: abrir `app/index.html` en Chrome (flechas, Enter, Esc/Back
 
 ## Mando
 
+**Navegación**
+
 | Tecla | Acción |
 |---|---|
-| Flechas / OK | Navegar / abrir |
-| Atrás | Volver / salir del reproductor / salir de la app |
+| Flechas / OK | Mover / abrir. Bajar desde las pestañas vuelve a la última tarjeta |
+| Atrás | Vista anterior → pestañas → Inicio → aviso; pulsar Atrás otra vez cierra la app |
+| 1 – 4 | Inicio, Categorías, Siguiendo, Vídeos (5 = Buscar) |
+| CH+ / CH− (o Re Pág / Av Pág) | Salto de 3 filas |
 | Amarillo | Sobre un directo: ver los vídeos de ese canal |
 | Rojo | Refrescar la pestaña actual |
-| Reproductor: OK | Menú de calidad |
-| Reproductor (VOD): ◀ ▶ / ⏪ ⏩ | ±10 s / ±30 s |
-| Play / Pause / Stop | Control |
+
+**Reproductor**
+
+| Tecla | Acción |
+|---|---|
+| OK / Play-Pause | Pausa y reanudar (en pausa el panel no se oculta) |
+| ▲ o Verde | Menú de calidad |
+| ▼ o Amarillo | Mostrar/ocultar el chat (solo directos) |
+| ◀ ▶ (VOD) | Saltar ±10 s. **Pulsando rápido el salto crece**: 10, 10, 30, 30, 60, 60, 120, 120, 300 s. Se aplica un único salto al soltar |
+| ⏪ ⏩ (VOD) | Saltos de 30 s como mínimo, con la misma aceleración |
+| Atrás / Stop | Salir |
+
+## Chat (solo lectura)
+
+Se activa con ▼ en un directo y la preferencia se recuerda. Pensado para TVs modestas:
+
+- una única conexión WebSocket, **abierta solo mientras el chat está visible**;
+- **30 nodos del DOM fijos que se reciclan** (nunca se crean ni destruyen elementos);
+- como mucho **4 repintados por segundo** y 8 mensajes por repintado: ante una ráfaga se descartan los antiguos;
+- sin imágenes (los emotes salen como texto), mensajes de hasta 160 caracteres y panel superpuesto (el vídeo no se redimensiona);
+- se corta al salir del directo o si la app pasa a segundo plano.
 
 ## Estructura
 
@@ -59,5 +81,6 @@ Prueba en escritorio: abrir `app/index.html` en Chrome (flechas, Enter, Esc/Back
 - `app/js/auth.js` — Device Code Grant, refresh de token, Helix (seguidos)
 - `app/js/points.js` — reclamo automático de puntos (GraphQL privado, requiere el cliente de TV)
 - `app/js/qr.js` — generador de QR propio (verificado con OpenCV, ver `tools/qr-check`)
+- `app/js/chat.js` — chat IRC de solo lectura optimizado
 - `app/js/login.js`, `player.js`, `app.js` — pantalla de cuenta, reproductor, vistas y mando
 - `tools/build.mjs` — inlina CSS/JS, minifica ligeramente y genera iconos

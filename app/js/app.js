@@ -1,10 +1,13 @@
-/* UI + navegación con mando. Un solo conjunto de elementos .f focusables y navegación espacial por geometría. */
+/* UI + navegación con mando.
+   El foco se mueve por aritmética de índices (sin medir el DOM), así que mantener pulsada una flecha es barato. */
 (function () {
   'use strict';
   var $ = function (i) { return document.getElementById(i); };
-  var app = $('app'), grid = $('grid'), content = $('content'), msg = $('msg'), crumb = $('crumb'), qin = $('q'), acct = $('acct');
+  var app = $('app'), grid = $('grid'), content = $('content'), msg = $('msg'), crumb = $('crumb'), qin = $('q'), acct = $('acct'), atoast = $('atoast');
   var tabEls = document.querySelectorAll('.tab');
-  var views = {}, stack = [], view = null, loading = false, foc = null;
+  var TABS = ['streams', 'games', 'following', 'videos', 'search'];
+  var COLS = { stream: 4, video: 4, game: 6, channel: 6 };   // deben coincidir con el CSS
+  var views = {}, stack = [], view = null, loading = false, foc = null, lastBack = 0, atT = 0;
 
   /* ---------- utilidades ---------- */
   function esc(s) {
@@ -19,6 +22,11 @@
     return (h ? h + ':' + two(m) : m) + ':' + two(s % 60);
   }
   function say(t) { msg.textContent = t || ''; msg.hidden = !t; }
+  function flash(t) {
+    atoast.textContent = t; atoast.hidden = false;
+    clearTimeout(atT);
+    atT = setTimeout(function () { atoast.hidden = true; }, 2200);
+  }
 
   /* ---------- tarjetas ---------- */
   function cardHtml(it, i) {
@@ -50,9 +58,10 @@
     foc = el;
     el.classList.add('foc');
     if (content.contains(el)) {
-      var r = el.getBoundingClientRect(), c = content.getBoundingClientRect(), pad = c.height * 0.04;
-      if (r.top < c.top + pad) content.scrollTop -= (c.top + pad - r.top);
-      else if (r.bottom > c.bottom - pad) content.scrollTop += r.bottom - (c.bottom - pad);
+      // offsetTop es relativo a #content y no cambia con el scroll: no fuerza medir cada rect
+      var H = content.clientHeight, pad = H * 0.04, top = el.offsetTop - content.scrollTop;
+      if (top < pad) content.scrollTop = el.offsetTop - pad;
+      else if (top + el.offsetHeight > H - pad) content.scrollTop = el.offsetTop + el.offsetHeight - H + pad;
       if (view && el.getAttribute('data-i') !== null) {
         var idx = +el.getAttribute('data-i');
         view.focus = idx;
@@ -61,23 +70,35 @@
     }
   }
 
+  function focusIdx(i) { setFocus(grid.children[i]); }
+  function topEls() { return Array.prototype.slice.call(app.querySelectorAll('#top .f')); }
+  function activeTab() { return app.querySelector('.tab.on') || app.querySelector('#top .f'); }
+
   function move(dir) {
-    if (!foc || !document.body.contains(foc)) { setFocus(app.querySelector('.f')); return; }
-    var els = app.querySelectorAll('.f'), cr = foc.getBoundingClientRect();
-    var cx = cr.left + cr.width / 2, cy = cr.top + cr.height / 2, best = null, bs = 1e9;
-    for (var i = 0; i < els.length; i++) {
-      var e = els[i];
-      if (e === foc) continue;
-      var r = e.getBoundingClientRect();
-      if (!r.width) continue;
-      var dx = r.left + r.width / 2 - cx, dy = r.top + r.height / 2 - cy, s;
-      if (dir === 'right') { if (dx <= 1 || Math.abs(dy) > cr.height) continue; s = dx + Math.abs(dy) * 3; }
-      else if (dir === 'left') { if (dx >= -1 || Math.abs(dy) > cr.height) continue; s = -dx + Math.abs(dy) * 3; }
-      else if (dir === 'down') { if (dy <= 1) continue; s = dy + Math.abs(dx) * 2; }
-      else { if (dy >= -1) continue; s = -dy + Math.abs(dx) * 2; }
-      if (s < bs) { bs = s; best = e; }
+    if (!foc || !document.body.contains(foc)) { setFocus(activeTab()); return; }
+    var di = foc.getAttribute('data-i'), n = view.items.length;
+    if (di === null) {                                    // barra superior
+      var els = topEls(), k = els.indexOf(foc);
+      if (dir === 'left' && k > 0) setFocus(els[k - 1]);
+      else if (dir === 'right' && k < els.length - 1) setFocus(els[k + 1]);
+      else if (dir === 'down' && n) focusIdx(Math.min(view.focus, n - 1));   // vuelve a la última tarjeta
+      return;
     }
-    if (best) setFocus(best);
+    var idx = +di, cols = COLS[view.items[idx].type] || 4;
+    if (dir === 'right') { if (idx % cols < cols - 1 && idx + 1 < n) focusIdx(idx + 1); }
+    else if (dir === 'left') { if (idx % cols > 0) focusIdx(idx - 1); }
+    else if (dir === 'up') { if (idx - cols >= 0) focusIdx(idx - cols); else setFocus(activeTab()); }
+    else if (dir === 'down') {
+      if (idx + cols < n) focusIdx(idx + cols);
+      else if (Math.floor(idx / cols) < Math.floor((n - 1) / cols)) focusIdx(n - 1);   // última fila incompleta
+      else loadMore(false);
+    }
+  }
+
+  function page(dir) {                                    // salto de 3 filas
+    if (!foc || foc.getAttribute('data-i') === null) return;
+    var idx = +foc.getAttribute('data-i'), cols = COLS[view.items[idx].type] || 4, n = view.items.length;
+    focusIdx(Math.max(0, Math.min(n - 1, idx + dir * cols * 3)));
   }
 
   /* ---------- vistas ---------- */
@@ -117,7 +138,7 @@
     say(v.items.length ? '' : v.empty);
     if (!v.items.length && !v.done) loadMore(true);
     else if (v.items.length) setFocus(grid.children[Math.min(v.focus, v.items.length - 1)]);
-    else setFocus(app.querySelector('.tab.on') || app.querySelector('.f'));
+    else setFocus(activeTab());
   }
 
   function loadMore(first) {
@@ -211,23 +232,31 @@
       openChannel(it.login, it.name);
     } else {                                              // stream | video
       view.scroll = content.scrollTop;
-      Player.open(it, function () { setFocus(grid.children[view.focus] || app.querySelector('.f')); });
+      Player.open(it, function () { setFocus(grid.children[view.focus] || activeTab()); });
     }
   }
 
+  // Atrás: sale de la vista anidada → de la cuadrícula a las pestañas → a Inicio → (2 veces seguidas) cierra la app.
   function back() {
     if (stack.length) { showView(stack.pop()); return; }
-    try { window.close(); } catch (e) {}                // sale de la app en webOS
+    if (foc && grid.contains(foc)) { setFocus(activeTab()); return; }
+    if (view.tab !== 'streams') { switchTab('streams'); return; }
+    var now = Date.now();
+    if (now - lastBack < 2500) { try { window.close(); } catch (e) {} return; }
+    lastBack = now;
+    flash('Pulsa Atrás otra vez para salir');
   }
 
   /* ---------- mando ---------- */
   var KEYS = { 37: 'left', 38: 'up', 39: 'right', 40: 'down', 13: 'ok', 461: 'back', 27: 'back', 8: 'back',
-    415: 'play', 19: 'pause', 413: 'stop', 179: 'playpause', 412: 'rw', 417: 'ff', 403: 'refresh', 405: 'channel' };
+    415: 'play', 19: 'pause', 413: 'stop', 179: 'playpause', 412: 'rw', 417: 'ff', 403: 'refresh', 404: 'green', 405: 'channel',
+    33: 'pgup', 34: 'pgdn', 427: 'pgup', 428: 'pgdn',
+    49: 't0', 50: 't1', 51: 't2', 52: 't3', 53: 't4' };
 
   document.addEventListener('keydown', function (e) {
     var k = KEYS[e.keyCode];
     if (!k) return;
-    if (e.repeat && (k === 'ok' || k === 'back' || k === 'channel' || k === 'refresh')) { e.preventDefault(); return; }   // pulsación mantenida
+    if (e.repeat && (k === 'ok' || k === 'back' || k === 'channel' || k === 'refresh' || k === 'green')) { e.preventDefault(); return; }   // pulsación mantenida
     if (document.activeElement === qin) {               // escribiendo en el cuadro de búsqueda
       if (k === 'ok') { qin.blur(); doSearch(); e.preventDefault(); }
       else if (k === 'back' && e.keyCode !== 8) { qin.blur(); e.preventDefault(); }
@@ -242,6 +271,11 @@
     else if (k === 'channel') {                          // amarillo: ver los vídeos del canal de la tarjeta
       var it = foc && foc.getAttribute('data-i') !== null ? itemOf(foc) : null;
       if (it && it.type === 'stream') openChannel(it.login, it.name);
+    }
+    else if (k === 'pgup' || k === 'pgdn') page(k === 'pgup' ? -1 : 1);
+    else if (k.charAt(0) === 't' && k.length === 2) {    // 1-5: Inicio, Categorías, Siguiendo, Vídeos, Buscar
+      var name = TABS[+k.charAt(1)];
+      if (name === 'search') setFocus(qin); else switchTab(name);
     }
     else if (k === 'left' || k === 'right' || k === 'up' || k === 'down') move(k);
   });

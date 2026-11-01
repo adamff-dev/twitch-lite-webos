@@ -2,7 +2,7 @@
 [hidden]{display:none!important}
 html,body{margin:0;height:100%;background:#0e0e10;color:#efeff1;overflow:hidden;font:1.35vw/1.3 sans-serif}
 #app{position:absolute;top:0;left:0;right:0;bottom:0}
-#top{height:5.5vw;padding:1.4vw 2vw 0;box-sizing:border-box;display:flex;align-items:center}
+#top{height:5.5vw;padding:1.4vw 1.5vw 0;box-sizing:border-box;display:flex;align-items:center}
 .tab{display:block;padding:.6vw 1.6vw;margin-right:1vw;border-radius:.6vw;background:#18181b;color:#adadb8;border:0;font:inherit;outline:0}
 .tab.on{color:#fff;background:#3a3a3d}
 #q{width:14vw;box-sizing:content-box}
@@ -10,11 +10,12 @@ html,body{margin:0;height:100%;background:#0e0e10;color:#efeff1;overflow:hidden;
 .av{width:2.4vw;height:2.4vw;border-radius:50%;margin-right:.7vw}
 #lqr img{display:block;width:100%;height:100%}
 #crumb{margin-left:1vw;color:#bf94ff;font-weight:bold}
-#content{position:absolute;top:5.5vw;bottom:0;left:0;right:0;overflow:hidden;padding:1vw 2vw 0;box-sizing:border-box}
-#grid{display:flex;flex-wrap:wrap}
+/* margen simétrico de 1.5vw; #grid se ensancha 1vw para que el hueco tras la última columna no se pierda */
+#content{position:absolute;top:5.5vw;bottom:0;left:0;right:0;overflow:hidden;padding:1.3vw 1.5vw 0;box-sizing:border-box}
+#grid{display:flex;flex-wrap:wrap;margin-right:-1vw}
 #msg{padding:4vw;text-align:center;color:#adadb8}
-.card{width:23.5%;margin:0 .5% 1.8vw 0;border-radius:.5vw;transition:transform .1s}
-.card.g{width:15.5%;margin-right:.7%}
+.card{position:relative;width:calc(24.95% - 1vw);margin:0 1vw 1.8vw 0;border-radius:.5vw;transition:transform .1s}
+.card.g{width:calc(16.65% - 1vw)}
 .th{position:relative;padding-top:56.25%;background:#18181b;border-radius:.5vw;overflow:hidden}
 .g .th{padding-top:133%}
 .th img{position:absolute;top:0;left:0;width:100%;height:100%}
@@ -24,10 +25,12 @@ html,body{margin:0;height:100%;background:#0e0e10;color:#efeff1;overflow:hidden;
 .nm{margin-top:.5vw;font-weight:bold}
 .ti,.gm{color:#adadb8;font-size:1.1vw}
 .foc{outline:.25vw solid #bf94ff;outline-offset:.1vw}
-.card.foc{transform:scale(1.04)}
+/* z-index: la tarjeta enfocada (ampliada) se pinta por encima de las vecinas y su borde no queda tapado */
+.card.foc{z-index:3;transform:scale(1.04)}
 #player{position:fixed;top:0;left:0;right:0;bottom:0;background:#000;z-index:9}
 #v{width:100%;height:100%;background:#000}
 #pmsg{position:absolute;top:45%;left:0;right:0;text-align:center;font-size:2vw;text-shadow:0 0 .5vw #000}
+#pstate{position:absolute;top:38%;left:0;right:0;text-align:center;font-size:3vw;font-weight:bold;text-shadow:0 0 .6vw #000}
 #ptoast{position:absolute;top:3vw;right:3vw;padding:.8vw 1.6vw;background:rgba(145,70,255,.92);border-radius:.6vw;font-size:1.5vw;font-weight:bold}
 #ovl{position:absolute;left:0;right:0;bottom:0;padding:5vw 3vw 2vw;background:rgba(0,0,0,.6)}
 #oname{font-size:2.2vw;font-weight:bold}
@@ -41,6 +44,16 @@ html,body{margin:0;height:100%;background:#0e0e10;color:#efeff1;overflow:hidden;
 #obar{height:.5vw;background:rgba(255,255,255,.25);border-radius:.3vw;margin-top:.8vw}
 #ofill{height:100%;width:0;background:#bf94ff;border-radius:.3vw}
 #otime{color:#d0d0d8;font-size:1.1vw;margin-top:.4vw}
+/* chat: panel superpuesto (el vídeo no se redimensiona); los mensajes se anclan abajo y lo viejo se recorta arriba */
+#chat{position:absolute;top:0;right:0;bottom:0;width:26vw;background:rgba(14,14,16,.86);overflow:hidden;font-size:1.15vw;line-height:1.3}
+#cmsgs{position:absolute;left:.8vw;right:.8vw;bottom:.8vw}
+.cm{padding:.25vw 0;word-wrap:break-word}
+.cm b{margin-right:.4vw}
+.cm .me{font-style:italic}
+#cst{position:absolute;top:.8vw;left:.8vw;color:#adadb8}
+#player.chat #ovl{right:26vw}
+#player.chat #qmenu,#player.chat #ptoast{right:29vw}
+#atoast{position:fixed;bottom:3vw;left:50%;transform:translateX(-50%);padding:.8vw 1.6vw;background:rgba(24,24,27,.95);border-radius:.6vw;z-index:20}
 #login{position:fixed;top:0;left:0;right:0;bottom:0;z-index:10;background:rgba(14,14,16,.97);display:flex;align-items:center;justify-content:center}
 #lbox{display:flex;align-items:center}
 #lqr{width:24vw;height:24vw;background:#fff;border-radius:1vw;overflow:hidden;margin-right:4vw}

@@ -1,38 +1,20 @@
-/* Reproductor: <video> nativo de webOS (HLS por hardware, sin hls.js). Directos y VODs. */
+/* Reproductor: <video> nativo de webOS (HLS por hardware, sin hls.js). Directos y VODs.
+   Mando: OK pausa · ▲ calidad · ▼ chat · ◀ ▶ saltos acelerados (VOD) · Atrás salir. */
 (function (w) {
   'use strict';
   var $ = function (i) { return document.getElementById(i); };
-  var el = $('player'), v = $('v'), ovl = $('ovl'), qm = $('qmenu'), pm = $('pmsg'), bar = $('obar'), fill = $('ofill'), tm = $('otime');
+  var el = $('player'), v = $('v'), ovl = $('ovl'), qm = $('qmenu'), pm = $('pmsg'), bar = $('obar'), fill = $('ofill'),
+    tm = $('otime'), toast = $('ptoast'), st = $('pstate');
   var isOpen = false, item = null, quals = [], qi = 0, mi = 0, menu = false, isVod = false;
-  var hideT = 0, retried = false, loadId = 0, onClose = null, toastT = 0, toast = $('ptoast');
-
-  function fmtN(n) { return String(Math.round(+n || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, '.'); }
-  function claimed(earned, total) {
-    toast.textContent = '+' + fmtN(earned) + ' puntos' + (total ? ' · ' + fmtN(total) : '');
-    toast.hidden = false;
-    clearTimeout(toastT);
-    toastT = setTimeout(function () { toast.hidden = true; }, 8000);
-  }
-  function startPoints() { if (isOpen && !isVod && item) Points.start(item.login, claimed); }
+  var hideT = 0, retried = false, loadId = 0, onClose = null, toastT = 0;
+  var seekTarget = null, seekFrom = 0, seekStreak = 0, seekLast = 0, seekT = 0;
+  var STEPS = [10, 10, 30, 30, 60, 60, 120, 120, 300];     // segundos por pulsación según la racha de pulsaciones rápidas
 
   function say(t) { pm.textContent = t || ''; pm.hidden = !t; }
   function store(k, val) {
     try { if (val === undefined) return localStorage.getItem(k); localStorage.setItem(k, val); } catch (e) {}
   }
-
-  function showOvl() {
-    ovl.hidden = false;
-    updTime();
-    clearTimeout(hideT);
-    hideT = setTimeout(function () { if (!menu) ovl.hidden = true; }, 4000);
-  }
-
-  function stop() {
-    try { v.pause(); } catch (e) {}
-    v.removeAttribute('src');
-    v.load();                 // libera el decoder
-  }
-
+  function fmtN(n) { return String(Math.round(+n || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, '.'); }
   function fmt(n) { return n >= 1000 ? (n / 1000).toFixed(1).replace('.', ',') + ' K' : String(n); }
   function two(n) { return n < 10 ? '0' + n : String(n); }
   function hms(s) {
@@ -40,12 +22,56 @@
     var h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60;
     return (h ? h + ':' + two(m) : m) + ':' + two(s % 60);
   }
+  function duration() { return v.duration > 0 && isFinite(v.duration) ? v.duration : (item && item.duration) || 0; }
 
+  /* ---------- avisos (puntos, chat...) ---------- */
+  function flash(t, ms) {
+    toast.textContent = t;
+    toast.hidden = false;
+    clearTimeout(toastT);
+    toastT = setTimeout(function () { toast.hidden = true; }, ms || 3000);
+  }
+  function claimed(earned, total) { flash('+' + fmtN(earned) + ' puntos' + (total ? ' · ' + fmtN(total) : ''), 8000); }
+  function startPoints() { if (isOpen && !isVod && item) Points.start(item.login, claimed); }
+
+  /* ---------- chat ---------- */
+  function applyChat() { el.classList[Chat.isOn() && isOpen && !isVod ? 'add' : 'remove']('chat'); }
+  function startChat() { if (isOpen && !isVod && item) Chat.attach(item.login); applyChat(); }
+  function toggleChat() {
+    if (isVod) { flash('El chat solo está disponible en directos'); return; }
+    var on = Chat.toggle();
+    if (on) Chat.attach(item.login);
+    applyChat();
+    flash(on ? 'Chat activado' : 'Chat desactivado', 1500);
+  }
+
+  /* ---------- barra, estado y overlay ---------- */
+  function renderState() {
+    var t = '';
+    if (seekTarget !== null) {
+      var d = seekTarget - seekFrom;
+      t = (d >= 0 ? '▶▶ +' : '◀◀ −') + hms(Math.abs(d)) + '   →   ' + hms(seekTarget);
+    } else if (v.paused && v.getAttribute('src')) t = '⏸  En pausa';
+    st.textContent = t;
+    st.hidden = !t;
+  }
   function updTime() {
     if (!isVod || ovl.hidden) return;
-    var d = v.duration > 0 && isFinite(v.duration) ? v.duration : item.duration || 0;
-    tm.textContent = hms(v.currentTime) + ' / ' + hms(d);
-    fill.style.width = (d ? Math.min(100, v.currentTime / d * 100) : 0) + '%';
+    var d = duration(), cur = seekTarget !== null ? seekTarget : v.currentTime;
+    tm.textContent = hms(cur) + ' / ' + hms(d);
+    fill.style.width = (d ? Math.min(100, cur / d * 100) : 0) + '%';
+  }
+  function showOvl() {
+    ovl.hidden = false;
+    updTime();
+    clearTimeout(hideT);
+    hideT = setTimeout(function () { if (!menu && !v.paused) ovl.hidden = true; }, 4000);
+  }
+
+  function stop() {
+    try { v.pause(); } catch (e) {}
+    v.removeAttribute('src');
+    v.load();                 // libera el decoder
   }
 
   function info() {
@@ -62,9 +88,12 @@
     if (quals[qi]) parts.push(quals[qi].name);
     $('oinfo').textContent = parts.join(' — ');
     bar.hidden = tm.hidden = !isVod;
-    $('ohint').textContent = isVod ? 'OK: calidad · ◀ ▶ ±10 s · Play/Pause · Atrás: salir' : 'OK: calidad · Play/Pause · Atrás: salir';
+    $('ohint').textContent = isVod
+      ? 'OK pausa · ▲ calidad · ◀ ▶ saltar (pulsa rápido para ir más lejos) · Atrás salir'
+      : 'OK pausa · ▲ calidad · ▼ chat · Atrás salir';
   }
 
+  /* ---------- carga ---------- */
   function play() {
     v.src = quals[qi].url;
     var p = v.play();
@@ -95,25 +124,56 @@
     qm.innerHTML = h;
   }
 
+  function resetSeek() { clearTimeout(seekT); seekTarget = null; seekStreak = 0; }
+
   function close() {
-    loadId++; isOpen = false; menu = false; clearTimeout(hideT);
-    Points.stop(); clearTimeout(toastT); toast.hidden = true;
-    stop(); say(''); el.hidden = true; qm.hidden = true; ovl.hidden = true;
+    loadId++; isOpen = false; menu = false; clearTimeout(hideT); clearTimeout(toastT); resetSeek();
+    Points.stop(); Chat.detach(); applyChat();
+    stop(); say(''); st.hidden = true; toast.hidden = true;
+    el.hidden = true; qm.hidden = true; ovl.hidden = true;
     item = null; quals = [];
     if (onClose) onClose();
   }
 
   function open(it, cb) {
     item = it; onClose = cb; isOpen = true; retried = false; menu = false; isVod = it.type === 'video';
-    el.hidden = false; qm.hidden = true;
+    resetSeek();
+    el.hidden = false; qm.hidden = true; st.hidden = true;
     quals = []; qi = 0;
-    info(); showOvl(); load(); startPoints();
+    info(); showOvl(); load(); startPoints(); startChat();
   }
 
-  function seek(d) {
-    var max = v.duration > 0 && isFinite(v.duration) ? v.duration - 1 : 1e9;
-    v.currentTime = Math.max(0, Math.min(max, v.currentTime + d));
-    updTime();
+  /* ---------- saltos acelerados (VOD) ----------
+     Cada pulsación rápida (<700 ms desde la anterior) sube un escalón: 10, 10, 30, 30, 60, 60, 120, 120, 300 s.
+     El salto real se aplica una sola vez, 450 ms después de la última pulsación (los seeks HLS son caros en TVs modestas). */
+  function applySeek() {
+    if (!isOpen || seekTarget === null) return;
+    var t = seekTarget;
+    seekTarget = null;
+    try { v.currentTime = t; } catch (e) {}
+    renderState(); updTime();
+  }
+  function seekPress(dir, big) {
+    var now = Date.now();
+    seekStreak = now - seekLast < 700 ? seekStreak + 1 : 1;
+    seekLast = now;
+    var step = STEPS[Math.min(seekStreak - 1, STEPS.length - 1)];
+    if (big && step < 30) step = 30;
+    if (seekTarget === null) seekFrom = v.currentTime;
+    var d = duration();
+    seekTarget = Math.max(0, Math.min(d > 2 ? d - 2 : 1e9, (seekTarget === null ? v.currentTime : seekTarget) + dir * step));
+    renderState(); updTime();
+    clearTimeout(seekT);
+    seekT = setTimeout(applySeek, 450);
+  }
+
+  function togglePause() {
+    if (v.paused) { var p = v.play(); if (p && p.catch) p.catch(function () {}); } else v.pause();
+  }
+
+  function openMenu() {
+    if (quals.length < 2) { flash('No hay otras calidades', 1500); return; }
+    menu = true; mi = qi; qm.hidden = false; renderMenu();
   }
 
   // Devuelve true si consumió la tecla.
@@ -128,35 +188,37 @@
         menu = false; qm.hidden = true; say('Cargando…'); play();
         return true;
       }
-      else if (k === 'back') { menu = false; qm.hidden = true; return true; }
+      else if (k === 'back' || k === 'green') { menu = false; qm.hidden = true; return true; }
       renderMenu();
       return true;
     }
     if (k === 'back' || k === 'stop') close();
-    else if (k === 'ok' && quals.length > 1) { menu = true; mi = qi; qm.hidden = false; renderMenu(); }
-    else if (k === 'playpause') { if (v.paused) v.play(); else v.pause(); }
-    else if (k === 'play') v.play();
+    else if (k === 'ok' || k === 'playpause') togglePause();
+    else if (k === 'up' || k === 'green') openMenu();
+    else if (k === 'down' || k === 'channel') toggleChat();
+    else if (k === 'play') { var p = v.play(); if (p && p.catch) p.catch(function () {}); }
     else if (k === 'pause') v.pause();
-    else if (isVod && k === 'left') seek(-10);
-    else if (isVod && k === 'right') seek(10);
-    else if (isVod && k === 'rw') seek(-30);
-    else if (isVod && k === 'ff') seek(30);
+    else if (isVod && (k === 'left' || k === 'right')) seekPress(k === 'left' ? -1 : 1, false);
+    else if (isVod && (k === 'rw' || k === 'ff')) seekPress(k === 'rw' ? -1 : 1, true);
     return true;
   }
 
-  v.addEventListener('playing', function () { say(''); });
+  v.addEventListener('playing', function () { say(''); renderState(); });
   v.addEventListener('waiting', function () { if (isOpen) say('Cargando…'); });
   v.addEventListener('timeupdate', updTime);
+  v.addEventListener('pause', function () { if (isOpen && v.getAttribute('src')) { renderState(); showOvl(); } });
+  v.addEventListener('play', function () { if (isOpen) { renderState(); showOvl(); } });
   v.addEventListener('error', function () {
     if (!isOpen || !v.getAttribute('src')) return;
     if (!retried) { retried = true; load(); }           // un reintento con token nuevo
     else say('No se pudo reproducir');
   });
 
-  // Si la app pasa a segundo plano, se libera el decoder; al volver se pide un token nuevo.
+  // Si la app pasa a segundo plano, se libera el decoder y se cierran chat y puntos; al volver se retoma todo.
   document.addEventListener('visibilitychange', function () {
     if (!isOpen) return;
-    if (document.hidden) { loadId++; stop(); Points.stop(); } else { retried = false; load(); startPoints(); }
+    if (document.hidden) { loadId++; stop(); Points.stop(); Chat.detach(); }
+    else { retried = false; load(); startPoints(); startChat(); }
   });
 
   w.Player = { open: open, key: key, isOpen: function () { return isOpen; } };
