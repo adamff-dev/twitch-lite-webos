@@ -1,92 +1,131 @@
-# Light Twitch (webOS)
+# Twitch Lite for webOS
 
-Cliente ligero de Twitch para TVs LG webOS. Sin frameworks, un único `index.html` de ~41 KB, `<video>` nativo para HLS.
+A lightweight Twitch client for LG webOS TVs. No frameworks: a single `index.html` of about 70 KB, native `<video>` for HLS, and a chat built for modest hardware.
 
-## Login con Twitch (QR)
+![Twitch Lite home screen on an LG webOS TV](docs/screenshot-home.png)
 
-Usa el *Device Code Grant* de Twitch: la TV muestra un QR (con el código ya incluido) y un código; escaneas con el móvil, inicias sesión y la TV queda vinculada. Permiso pedido: `user:read:follows`.
+> **Unofficial.** Twitch Lite is an independent project. It is not made by, endorsed by or affiliated with Twitch Interactive, Inc.
 
-Por defecto inicia sesión con el **Client ID de la app de TV de Twitch** (`app/js/config.js`). Es el único cuyo token también acepta el GraphQL privado de Twitch, necesario para los puntos automáticos. Por eso, en la pantalla de autorización de Twitch la solicitante aparece como la app oficial de Twitch.
+## Install
 
-> **Aviso:** usar el cliente oficial y la API privada no está permitido por las condiciones de Twitch y puede dejar de funcionar en cualquier momento o afectar a tu cuenta. Es tu decisión.
+1. Download `com.twitchlite.app_1.0.0_all.ipk` from the [latest release](https://github.com/adamff-dev/twitch-lite-webos/releases/latest).
+2. On your TV, install the **Developer Mode** app from the LG Content Store and turn Developer Mode on.
+3. Install the [webOS TV CLI (ares)](https://webostv.developer.lge.com/develop/tools/cli-installation) and connect to your TV:
 
-Alternativa oficial: registra tu propia app en https://dev.twitch.tv/console (**Client Type: Public**, redirect `http://localhost`) y compila con `TWITCH_CLIENT_ID=tu_id npm run package`. Todo funciona igual **salvo los puntos automáticos**.
-
-Sin sesión la app funciona (Inicio, Categorías, Buscar); Siguiendo y Vídeos piden sesión.
-
-## Puntos del canal automáticos
-
-Mientras ves un directo con la sesión iniciada, cada 60 s se comprueba si hay un cofre de bonificación y se reclama solo. En el reproductor aparece un aviso (`+50 puntos · 1.234`). Para desactivarlo: `localStorage.setItem('ptsOff','1')`.
-
-## Idioma
-
-Interfaz en **español** e **inglés**, según el idioma del sistema de la TV (si empieza por `es`, español; en cualquier otro caso, inglés). No hay ningún ajuste: si cambias el idioma de la TV con la app abierta, se actualiza sola.
-
-Las traducciones están en `app/js/i18n.js`. Para añadir un idioma, copia el bloque `en` y tradúcelo.
-
-## Pantallas
-
-| Pestaña | Contenido |
-|---|---|
-| Inicio | Directos más vistos |
-| Categorías | Categorías → sus directos |
-| Siguiendo | Directos de los canales que sigues (requiere sesión) |
-| Vídeos | Tus canales seguidos → sus emisiones pasadas (VOD). Si el canal está en directo, aparece primero |
-| Buscar | Canales (en directo primero) → sus vídeos |
-| Entrar / usuario | Login por QR o cerrar sesión |
-
-## Comandos
-
-```
-npm test                 # compatibilidad Chromium 53 + red simulada + flujos de UI con jsdom
-npm run package         # build -> dist/ y .ipk en out/  (opcional: TWITCH_CLIENT_ID=xxx)
-ares-install -d <tv> out/com.lighttwitch.app_0.1.0_all.ipk
-ares-launch  -d <tv> com.lighttwitch.app
-ares-inspect -d <tv> com.lighttwitch.app --open   # DevTools remotas
+```sh
+ares-setup-device                                              # add the TV once (IP, passphrase from Developer Mode)
+ares-install -d <tv> com.twitchlite.app_1.0.0_all.ipk
+ares-launch  -d <tv> com.twitchlite.app
 ```
 
-Prueba en escritorio: abrir `app/index.html` en Chrome (flechas, Enter, Esc/Backspace = Atrás).
+To build from source instead: `npm install && npm run package`, which creates `out/com.twitchlite.app_1.0.0_all.ipk`.
 
-## Mando
+## Login with Twitch (QR)
 
-**Navegación**
+The app uses Twitch's *Device Code Grant*: the TV shows a QR code and a short code, you scan the QR with your phone, sign in, and the TV is linked. The only permission requested is `user:read:follows`.
 
-| Tecla | Acción |
+By default it signs in with the **Client ID of the Twitch TV app** (`app/js/config.js`). That is the only client whose token also works with the private GraphQL API that the automatic channel points need. This is why the Twitch authorization page shows the official Twitch TV app as the requesting application.
+
+> **Warning:** using the official client and the private API is not allowed by Twitch's terms and may stop working at any time or affect your account. It is your decision.
+
+Official alternative: register your own app at https://dev.twitch.tv/console (**Client Type: Public**, redirect `http://localhost`) and build with `TWITCH_CLIENT_ID=your_id npm run package`. Everything works the same **except the automatic channel points**.
+
+Without signing in you can use Home, Categories and Search. Following and Videos require signing in.
+
+## Automatic channel points
+
+While you watch a live stream with an active session, the app checks every 60 seconds for a bonus chest and claims it automatically. A banner appears in the player (`+50 points · 1,234`). To turn this off, set `localStorage.setItem('ptsOff', '1')` in the app's storage.
+
+## Language
+
+The interface is available in **English** and **Spanish**. It follows the TV's system language (Spanish if it starts with `es`, English otherwise). There is no language switch: if you change the TV language while the app is open, the interface updates by itself.
+
+Translations live in `app/js/i18n.js`. To add a language, copy the `en` block and translate it.
+
+## Screens
+
+| Tab | Content |
 |---|---|
-| Flechas / OK | Mover / abrir. Bajar desde las pestañas vuelve a la última tarjeta |
-| Atrás | Vista anterior → pestañas → Inicio → aviso; pulsar Atrás otra vez cierra la app |
-| 1 – 4 | Inicio, Categorías, Siguiendo, Vídeos (5 = Buscar) |
-| CH+ / CH− (o Re Pág / Av Pág) | Salto de 3 filas |
-| Amarillo | Sobre un directo: ver los vídeos de ese canal |
-| Rojo | Refrescar la pestaña actual |
+| Home | Most-watched live streams |
+| Categories | Categories, then their live streams |
+| Following | Live streams from the channels you follow (requires sign-in) |
+| Videos | Your followed channels, then their past broadcasts (VODs). A channel that is live appears first |
+| Search | Channels (live ones first), then their videos |
+| Sign in / account | QR sign-in, or sign out |
 
-**Reproductor**
+## Remote control
 
-| Tecla | Acción |
+**Navigation**
+
+| Key | Action |
 |---|---|
-| OK / Play-Pause | Pausa y reanudar (en pausa el panel no se oculta) |
-| ▲ o Verde | Menú de calidad |
-| ▼ o Amarillo | Mostrar/ocultar el chat (solo directos) |
-| ◀ ▶ (VOD) | Saltar ±10 s. **Pulsando rápido el salto crece**: 10, 10, 30, 30, 60, 60, 120, 120, 300 s. Se aplica un único salto al soltar |
-| ⏪ ⏩ (VOD) | Saltos de 30 s como mínimo, con la misma aceleración |
-| Atrás / Stop | Salir |
+| Arrows / OK | Move / open. Pressing Down from the tabs returns to the last card |
+| Back | Previous view → tabs → Home → a hint; press Back again to close the app |
+| 1 – 6 | Home, Categories, Following, Videos, Search, Account (Sign in / your user) |
+| CH+ / CH− (or Page Up / Page Down) | Jump 3 rows |
+| Yellow | On a live stream: show that channel's videos |
+| Red | Refresh the current tab |
+| Green | Settings (also inside the player, so you can watch the chat while you change them) |
 
-## Chat (solo lectura)
+**Player**
 
-Se activa con ▼ en un directo y la preferencia se recuerda. Pensado para TVs modestas:
+All controls are buttons in the bottom panel. The panel hides itself after a few seconds (4 s by default) and stays visible while paused.
+The buttons are **◀ 10 s · Pause/Play · 10 s ▶** (VOD only), **Quality**, **Chat** (live only) and **Exit**.
 
-- una única conexión WebSocket, **abierta solo mientras el chat está visible**;
-- **30 nodos del DOM fijos que se reciclan** (nunca se crean ni destruyen elementos);
-- como mucho **4 repintados por segundo** y 8 mensajes por repintado: ante una ráfaga se descartan los antiguos;
-- sin imágenes (los emotes salen como texto), mensajes de hasta 160 caracteres y panel superpuesto (el vídeo no se redimensiona);
-- se corta al salir del directo o si la app pasa a segundo plano.
+| Key | Action |
+|---|---|
+| ◀ ▶ | Move focus between the buttons. With the panel hidden, it only shows the panel |
+| ▲ ▼ | On a VOD, move between the buttons and the progress bar |
+| OK | Press the focused button. With the panel hidden, pauses or resumes |
+| ◀ ▶ on the progress bar (VOD) | Skip ±10 s. **Press repeatedly to skip further**: 10, 10, 30, 30, 60, 60, 120, 120, 300 s. One seek is applied when you stop pressing |
+| Back | Closes the quality menu; otherwise exits the player |
+| Play / Pause / Stop / ⏪ ⏩ | Media keys keep working (⏪ ⏩ skip at least 30 s) |
 
-## Estructura
+The Magic Remote pointer works too: moving it shows the panel, and you can click buttons and qualities.
 
-- `app/js/api.js` — GraphQL de Twitch (sin sesión) + token y master playlist HLS
-- `app/js/auth.js` — Device Code Grant, refresh de token, Helix (seguidos)
-- `app/js/points.js` — reclamo automático de puntos (GraphQL privado, requiere el cliente de TV)
-- `app/js/qr.js` — generador de QR propio (verificado con OpenCV, ver `tools/qr-check`)
-- `app/js/chat.js` — chat IRC de solo lectura optimizado
-- `app/js/login.js`, `player.js`, `app.js` — pantalla de cuenta, reproductor, vistas y mando
-- `tools/build.mjs` — inlina CSS/JS, minifica ligeramente y genera iconos
+## Settings
+
+Press **Green** to open the settings. ▲ ▼ move between rows, ◀ ▶ change the value, OK goes to the next value, and Back or Green closes it. Changes apply immediately and are saved on the TV:
+
+- **Tab on app start**: Home, Categories, Following or Videos.
+- **Chat**:
+  - text size (4 levels);
+  - width (5–100 % of the screen, in steps of 5);
+  - position (top or bottom, left or right);
+  - background opacity (0–100 %; the text has a shadow so it stays readable on a transparent background).
+- **Hide the player panel after**: 3, 4, 6, 10 or 15 s.
+- **Restore default values**.
+
+## Chat (read-only)
+
+Turn it on with Down during a live stream. The preference is remembered. It is designed for modest TVs:
+
+- a single WebSocket connection, **open only while the chat is visible**;
+- **30 fixed DOM nodes that are recycled** (no elements are created or destroyed at runtime);
+- at most **4 repaints per second** and 8 messages per repaint: during bursts, older messages are dropped;
+- no images (emotes appear as text), messages up to 160 characters, and an overlay panel (the video is not resized);
+- disconnects when you leave the stream or when the app goes to the background.
+
+## Development
+
+```sh
+npm test            # Chromium 53 compatibility + mocked network + UI flows in jsdom
+npm run package     # builds dist/ and the .ipk in out/ (optional: TWITCH_CLIENT_ID=xxx)
+ares-inspect -d <tv> com.twitchlite.app --open   # remote DevTools
+```
+
+Desktop testing: open `app/index.html` in Chrome (arrow keys, Enter, Esc/Backspace = Back).
+
+The app targets webOS 4 and later (Chromium 53), so the code avoids `async/await`, spread, optional chaining and CSS grid. `npm test` checks this.
+
+## Structure
+
+- `app/js/api.js`: Twitch GraphQL (no sign-in needed), access token and HLS master playlist
+- `app/js/auth.js`: Device Code Grant, token refresh, Helix (followed channels)
+- `app/js/points.js`: automatic channel points claim (private GraphQL, needs the TV client)
+- `app/js/qr.js`: our own QR generator (checked with OpenCV, see `tools/qr-check`)
+- `app/js/chat.js`: optimized read-only IRC chat
+- `app/js/settings.js`: settings (Green button)
+- `app/js/login.js`, `player.js`, `app.js`: sign-in screen, player, views and remote control
+- `app/js/i18n.js`: translations (English and Spanish)
+- `tools/build.mjs`: inlines CSS and JS, minifies lightly and generates the icons
