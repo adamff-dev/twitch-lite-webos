@@ -8,6 +8,7 @@
   var isOpen = false, item = null, quals = [], qi = 0, mi = 0, menu = false, isVod = false;
   var hideT = 0, retried = false, loadId = 0, onClose = null, toastT = 0;
   var seekTarget = null, seekFrom = 0, seekStreak = 0, seekLast = 0, seekT = 0;
+  var resumeAt = 0;          // posición a recuperar al cambiar de calidad o reintentar un VOD
   var STEPS = [10, 10, 30, 30, 60, 60, 120, 120, 300];     // segundos por pulsación según la racha de pulsaciones rápidas
 
   function say(t) { pm.textContent = t || ''; pm.hidden = !t; }
@@ -94,6 +95,16 @@
   }
 
   /* ---------- carga ---------- */
+  // Al cambiar el flujo (calidad, reintento) la lista HLS nueva empieza en 0: se vuelve a la posición guardada
+  // en cuanto el reproductor conoce la duración (loadedmetadata; canplay de respaldo).
+  function applyResume() {
+    if (!resumeAt) return;
+    var t = resumeAt;
+    resumeAt = 0;
+    try { v.currentTime = t; } catch (e) {}
+    updTime();
+  }
+
   function play() {
     v.src = quals[qi].url;
     var p = v.play();
@@ -124,10 +135,12 @@
     qm.innerHTML = h;
   }
 
+  function keepPosition() { if (isVod && v.getAttribute('src') && v.currentTime > 1) resumeAt = v.currentTime; }
+
   function resetSeek() { clearTimeout(seekT); seekTarget = null; seekStreak = 0; }
 
   function close() {
-    loadId++; isOpen = false; menu = false; clearTimeout(hideT); clearTimeout(toastT); resetSeek();
+    loadId++; isOpen = false; menu = false; resumeAt = 0; clearTimeout(hideT); clearTimeout(toastT); resetSeek();
     Points.stop(); Chat.detach(); applyChat();
     stop(); say(''); st.hidden = true; toast.hidden = true;
     el.hidden = true; qm.hidden = true; ovl.hidden = true;
@@ -137,6 +150,7 @@
 
   function open(it, cb) {
     item = it; onClose = cb; isOpen = true; retried = false; menu = false; isVod = it.type === 'video';
+    resumeAt = 0;
     resetSeek();
     el.hidden = false; qm.hidden = true; st.hidden = true;
     quals = []; qi = 0;
@@ -185,6 +199,8 @@
       else if (k === 'down' && mi < quals.length - 1) mi++;
       else if (k === 'ok') {
         qi = mi; store('tq', quals[qi].name);
+        if (isVod) resumeAt = seekTarget !== null ? seekTarget : v.currentTime;   // no perder la posición al cambiar de calidad
+        resetSeek();
         menu = false; qm.hidden = true; say('Cargando…'); play();
         return true;
       }
@@ -206,18 +222,20 @@
   v.addEventListener('playing', function () { say(''); renderState(); });
   v.addEventListener('waiting', function () { if (isOpen) say('Cargando…'); });
   v.addEventListener('timeupdate', updTime);
+  v.addEventListener('loadedmetadata', applyResume);
+  v.addEventListener('canplay', applyResume);
   v.addEventListener('pause', function () { if (isOpen && v.getAttribute('src')) { renderState(); showOvl(); } });
   v.addEventListener('play', function () { if (isOpen) { renderState(); showOvl(); } });
   v.addEventListener('error', function () {
     if (!isOpen || !v.getAttribute('src')) return;
-    if (!retried) { retried = true; load(); }           // un reintento con token nuevo
+    if (!retried) { retried = true; keepPosition(); load(); }   // un reintento con token nuevo, sin perder la posición
     else say('No se pudo reproducir');
   });
 
   // Si la app pasa a segundo plano, se libera el decoder y se cierran chat y puntos; al volver se retoma todo.
   document.addEventListener('visibilitychange', function () {
     if (!isOpen) return;
-    if (document.hidden) { loadId++; stop(); Points.stop(); Chat.detach(); }
+    if (document.hidden) { keepPosition(); loadId++; stop(); Points.stop(); Chat.detach(); }
     else { retried = false; load(); startPoints(); startChat(); }
   });
 

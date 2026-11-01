@@ -571,6 +571,35 @@ function boot(o = {}) {
   assert.equal(v.__t, 500);
   ok('VOD: saltos acelerados (10→10→30→30→60 s…), un solo seek y límites 0 / final');
 
+  // cambiar de calidad no pierde la posición (la lista HLS nueva empieza en 0)
+  await sleep(800);
+  v.__t = 1234; v.__seeks = 0;
+  const srcBefore = v.getAttribute('src');
+  key(K.up); key(K.down); key(K.ok);
+  assert.notEqual(v.getAttribute('src'), srcBefore, 'cambia el flujo');
+  v.__t = 0;                                                  // el flujo nuevo arranca en 0
+  v.dispatchEvent(new w.Event('loadedmetadata'));
+  assert.equal(v.__t, 1234, 'recupera la posición al cargar el nuevo flujo');
+  v.dispatchEvent(new w.Event('canplay'));
+  assert.equal(v.__seeks, 1, 'la posición se restaura una sola vez');
+
+  // un error de reproducción reintenta con token nuevo y tampoco pierde la posición
+  v.__t = 500; v.__seeks = 0;
+  v.dispatchEvent(new w.Event('error'));
+  await sleep(150);
+  await until(() => v.getAttribute('src'), 'src tras el reintento');
+  v.__t = 0;
+  v.dispatchEvent(new w.Event('loadedmetadata'));
+  assert.equal(v.__t, 500, 'el reintento recupera la posición');
+
+  // un vídeo distinto empieza en 0
+  w.Player.open({ type: 'video', id: '902', name: 'Chan1', title: 'Otro', date: '', game: '', duration: 100 }, () => {});
+  await until(() => v.getAttribute('src'), 'src del otro VOD');
+  v.__t = 0; v.__seeks = 0;
+  v.dispatchEvent(new w.Event('loadedmetadata'));
+  assert.equal(v.__seeks, 0, 'no arrastra la posición del vídeo anterior');
+  ok('VOD: cambiar de calidad o reintentar conserva la posición (una sola vez y sin arrastrarla a otro vídeo)');
+
   key(K.down);
   assert.match($('ptoast').textContent, /solo está disponible en directos/);
   assert.equal(t.sockets.length, 1, 'un VOD no abre chat');
