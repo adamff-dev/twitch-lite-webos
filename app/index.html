@@ -3,19 +3,19 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Light Twitch</title>
+<title>Twitch Lite</title>
 <link rel="stylesheet" href="css/app.css">
 </head>
 <body>
 <div id="app">
   <div id="top">
-    <span class="f tab" data-tab="streams" data-i18n="tab.home">Inicio</span>
-    <span class="f tab" data-tab="games" data-i18n="tab.games">Categorías</span>
-    <span class="f tab" data-tab="following" data-i18n="tab.following">Siguiendo</span>
-    <span class="f tab" data-tab="videos" data-i18n="tab.videos">Vídeos</span>
-    <input class="f tab" id="q" data-tab="search" type="text" data-i18n-placeholder="tab.search" placeholder="Buscar canal…" autocomplete="off">
+    <span class="f tab" data-k="1" data-tab="streams" data-i18n="tab.home">Inicio</span>
+    <span class="f tab" data-k="2" data-tab="games" data-i18n="tab.games">Categorías</span>
+    <span class="f tab" data-k="3" data-tab="following" data-i18n="tab.following">Siguiendo</span>
+    <span class="f tab" data-k="4" data-tab="videos" data-i18n="tab.videos">Vídeos</span>
+    <span class="iw" data-k="5"><input class="f tab" id="q" data-tab="search" type="text" data-i18n-placeholder="tab.search" placeholder="Buscar canal…" autocomplete="off"></span>
     <span id="crumb"></span>
-    <span class="f tab" id="acct" data-tab="account">Entrar</span>
+    <span class="f tab" id="acct" data-k="6" data-tab="account">Entrar</span>
   </div>
   <div id="content">
     <div id="grid"></div>
@@ -33,11 +33,27 @@
     <div id="oinfo"></div>
     <div id="obar"><div id="ofill"></div></div>
     <div id="otime"></div>
-    <div id="ohint" data-i18n="player.hintLive">OK pausa · ▲ calidad · ▼ chat · Atrás salir</div>
+    <div id="octl">
+      <span class="pb" id="bback" data-a="back">◀ 10 s</span>
+      <span class="pb" id="bpause" data-a="pause"></span>
+      <span class="pb" id="bfwd" data-a="fwd">10 s ▶</span>
+      <span id="cgap"></span>
+      <span class="pb" id="bqual" data-a="quality"></span>
+      <span class="pb" id="bchat" data-a="chat"></span>
+      <span class="pb" id="bclose" data-a="close"></span>
+    </div>
+    <div id="ohint"></div>
   </div>
   <div id="qmenu" hidden></div>
 </div>
 <div id="atoast" hidden></div>
+<div id="settings" hidden>
+  <div id="sbox">
+    <div id="stitle" data-i18n="set.title">Ajustes</div>
+    <div id="srows"></div>
+    <div id="shint"></div>
+  </div>
+</div>
 <div id="login" hidden>
   <div id="lbox">
     <div id="lqr"></div>
@@ -51,6 +67,7 @@
 </div>
 <script src="js/i18n.js"></script>
 <script src="js/config.js"></script>
+<script src="js/settings.js"></script>
 <script src="js/api.js"></script>
 <script src="js/auth.js"></script>
 <script src="js/qr.js"></script>

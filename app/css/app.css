@@ -5,6 +5,13 @@ html,body{margin:0;height:100%;background:#0e0e10;color:#efeff1;overflow:hidden;
 #top{height:5.5vw;padding:1.4vw 1.5vw 0;box-sizing:border-box;display:flex;align-items:center}
 .tab{display:block;padding:.6vw 1.6vw;margin-right:1vw;border-radius:.6vw;background:#18181b;color:#adadb8;border:0;font:inherit;outline:0}
 .tab.on{color:#fff;background:#3a3a3d}
+/* número de la tecla (1-6) en un círculo dentro de cada pestaña. Va en ::before (no en el DOM) para no cambiar el texto de las pestañas */
+.tab[data-k]:before,.iw:before{content:attr(data-k);display:inline-block;width:1.8vw;height:1.8vw;line-height:1.8vw;border-radius:50%;background:rgba(255,255,255,.22);color:#efeff1;text-align:center;font-size:1.1vw;font-weight:bold;margin-right:.6vw;vertical-align:middle}
+.tab[data-k]{padding-left:.6vw}
+.iw{position:relative;display:block;margin-right:1vw}
+.iw:before{position:absolute;left:.6vw;top:50%;margin:-.9vw 0 0;z-index:1}
+.iw .tab{margin-right:0}
+.iw #q{padding-left:3vw}
 #q{width:14vw;box-sizing:content-box}
 #acct{margin:0 0 0 auto;color:#bf94ff;display:flex;align-items:center}
 .av{width:2.4vw;height:2.4vw;border-radius:50%;margin-right:.7vw}
@@ -36,8 +43,16 @@ html,body{margin:0;height:100%;background:#0e0e10;color:#efeff1;overflow:hidden;
 #oname{font-size:2.2vw;font-weight:bold}
 #oinfo{color:#d0d0d8;margin-top:.4vw}
 #ohint{color:#adadb8;font-size:1.1vw;margin-top:.8vw}
-#qmenu{position:absolute;right:3vw;bottom:9vw;min-width:16vw;background:rgba(24,24,27,.95);border-radius:.6vw;padding:.6vw}
+#qmenu{position:absolute;right:3vw;bottom:13vw;min-width:16vw;background:rgba(24,24,27,.95);border-radius:.6vw;padding:.6vw}
 .qi{padding:.6vw 1.2vw;border-radius:.4vw}
+/* botones del panel: se navega con las flechas (foco morado) y OK; con el puntero del mando también valen */
+#octl{display:flex;align-items:center;margin-top:1vw}
+#cgap{flex:1}
+.pb{padding:.6vw 1.4vw;margin-right:1vw;border-radius:.6vw;background:rgba(255,255,255,.14);color:#efeff1;white-space:nowrap}
+#bclose{margin-right:0}
+.pb.act{color:#bf94ff}
+.pb.foc{background:#bf94ff;color:#000;outline:0}
+#obar.foc{background:rgba(255,255,255,.45);outline:.2vw solid #bf94ff;outline-offset:.25vw}
 .c .th{padding-top:100%}
 .c .th img{border-radius:.5vw}
 .du{position:absolute;right:.5vw;bottom:.5vw;padding:.1vw .5vw;background:rgba(0,0,0,.75);border-radius:.3vw;font-size:1.1vw}
@@ -45,14 +60,25 @@ html,body{margin:0;height:100%;background:#0e0e10;color:#efeff1;overflow:hidden;
 #ofill{height:100%;width:0;background:#bf94ff;border-radius:.3vw}
 #otime{color:#d0d0d8;font-size:1.1vw;margin-top:.4vw}
 /* chat: panel superpuesto (el vídeo no se redimensiona); los mensajes se anclan abajo y lo viejo se recorta arriba */
-#chat{position:absolute;top:0;right:0;bottom:0;width:26vw;background:rgba(14,14,16,.86);overflow:hidden;font-size:1.15vw;line-height:1.3}
+#chat{position:absolute;top:0;right:0;bottom:0;width:26vw;background:rgba(14,14,16,.86);overflow:hidden;font-size:1.6vw;line-height:1.3}
 #cmsgs{position:absolute;left:.8vw;right:.8vw;bottom:.8vw}
-.cm{padding:.25vw 0;word-wrap:break-word}
+.cm{padding:.25vw 0;word-wrap:break-word;text-shadow:0 0 .3vw #000,0 0 .3vw #000}
 .cm b{margin-right:.4vw}
 .cm .me{font-style:italic}
 #cst{position:absolute;top:.8vw;left:.8vw;color:#adadb8}
-#player.chat #ovl{right:26vw}
-#player.chat #qmenu,#player.chat #ptoast{right:29vw}
+/* posición, tamaño, letra y opacidad del chat (y los huecos que deja en el panel) los pone player.js con los ajustes */
+/* ajustes (botón Verde). .pl = sobre el reproductor: fondo casi transparente para ver el chat; .al/.ar = pegado a un lado */
+#settings{position:fixed;top:0;left:0;right:0;bottom:0;z-index:12;background:rgba(14,14,16,.94);display:flex;align-items:center;justify-content:center}
+#settings.pl{background:rgba(14,14,16,.35)}
+#settings.al{justify-content:flex-start;padding-left:3vw}
+#settings.ar{justify-content:flex-end;padding-right:3vw}
+#sbox{width:44vw;background:#18181b;border-radius:1vw;padding:1.8vw 2.2vw}
+#stitle{font-size:2.2vw;font-weight:bold;margin-bottom:1vw}
+.si{display:flex;justify-content:space-between;padding:.7vw 1.2vw;border-radius:.5vw;margin-bottom:.3vw;color:#d0d0d8}
+.si.on{background:#bf94ff;color:#000}
+.sv{font-weight:bold;margin-left:2vw;white-space:nowrap}
+.rs{margin-top:.8vw;color:#adadb8}
+#shint{margin-top:1vw;color:#adadb8;font-size:1.1vw}
 #atoast{position:fixed;bottom:3vw;left:50%;transform:translateX(-50%);padding:.8vw 1.6vw;background:rgba(24,24,27,.95);border-radius:.6vw;z-index:20}
 #login{position:fixed;top:0;left:0;right:0;bottom:0;z-index:10;background:rgba(14,14,16,.97);display:flex;align-items:center;justify-content:center}
 #lbox{display:flex;align-items:center}

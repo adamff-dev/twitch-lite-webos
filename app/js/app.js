@@ -5,7 +5,7 @@
   var $ = function (i) { return document.getElementById(i); };
   var app = $('app'), grid = $('grid'), content = $('content'), msg = $('msg'), crumb = $('crumb'), qin = $('q'), acct = $('acct'), atoast = $('atoast');
   var tabEls = document.querySelectorAll('.tab');
-  var TABS = ['streams', 'games', 'following', 'videos', 'search'];
+  var TABS = ['streams', 'games', 'following', 'videos', 'search', 'account'];
   var COLS = { stream: 4, video: 4, game: 6, channel: 6 };   // deben coincidir con el CSS
   var views = {}, stack = [], view = null, loading = false, foc = null, lastBack = 0, atT = 0;
 
@@ -253,7 +253,7 @@
   var KEYS = { 37: 'left', 38: 'up', 39: 'right', 40: 'down', 13: 'ok', 461: 'back', 27: 'back', 8: 'back',
     415: 'play', 19: 'pause', 413: 'stop', 179: 'playpause', 412: 'rw', 417: 'ff', 403: 'refresh', 404: 'green', 405: 'channel',
     33: 'pgup', 34: 'pgdn', 427: 'pgup', 428: 'pgdn',
-    49: 't0', 50: 't1', 51: 't2', 52: 't3', 53: 't4' };
+    49: 't0', 50: 't1', 51: 't2', 52: 't3', 53: 't4', 54: 't5' };
 
   document.addEventListener('keydown', function (e) {
     var k = KEYS[e.keyCode];
@@ -265,7 +265,9 @@
       return;
     }
     e.preventDefault();
+    if (Settings.isOpen()) { Settings.key(k); return; }
     if (Login.isOpen()) { Login.key(k); return; }
+    if (k === 'green') { Settings.open(Player.chatShown() ? Settings.freeSide() : ''); return; }   // ajustes (sobre el reproductor se aparta del chat)
     if (Player.isOpen()) { Player.key(k); return; }
     if (k === 'ok') { if (foc) activate(foc); }
     else if (k === 'back') back();
@@ -275,9 +277,11 @@
       if (it && it.type === 'stream') openChannel(it.login, it.name);
     }
     else if (k === 'pgup' || k === 'pgdn') page(k === 'pgup' ? -1 : 1);
-    else if (k.charAt(0) === 't' && k.length === 2) {    // 1-5: Inicio, Categorías, Siguiendo, Vídeos, Buscar
+    else if (k.charAt(0) === 't' && k.length === 2) {    // 1-6: Inicio, Categorías, Siguiendo, Vídeos, Buscar, Cuenta (Entrar)
       var name = TABS[+k.charAt(1)];
-      if (name === 'search') setFocus(qin); else switchTab(name);
+      if (name === 'search') setFocus(qin);
+      else if (name === 'account') activate(acct);
+      else switchTab(name);
     }
     else if (k === 'left' || k === 'right' || k === 'up' || k === 'down') move(k);
   });
@@ -301,5 +305,5 @@
     refreshAcct();
     if (acct.textContent !== was) { views.following = views.videos = null; }
   });
-  switchTab('streams');
+  switchTab(Settings.get('tab'));                        // pestaña inicial elegida en los ajustes
 })();

@@ -1,10 +1,14 @@
 /* Reproductor: <video> nativo de webOS (HLS por hardware, sin hls.js). Directos y VODs.
-   Mando: OK pausa · ▲ calidad · ▼ chat · ◀ ▶ saltos acelerados (VOD) · Atrás salir. */
+   Todo se maneja con botones del panel inferior: las flechas mueven el foco, OK activa (◀ 10 s, pausa, 10 s ▶,
+   calidad, chat, salir) y en un VOD la barra de progreso también se enfoca para saltar (◀ ▶, acelerado).
+   Con el panel oculto, OK pausa y cualquier flecha lo muestra. Atrás sale; las teclas multimedia siguen valiendo. */
 (function (w) {
   'use strict';
   var $ = function (i) { return document.getElementById(i); };
   var el = $('player'), v = $('v'), ovl = $('ovl'), qm = $('qmenu'), pm = $('pmsg'), bar = $('obar'), fill = $('ofill'),
-    tm = $('otime'), toast = $('ptoast'), st = $('pstate');
+    tm = $('otime'), toast = $('ptoast'), st = $('pstate'), ctl = $('octl'), bPause = $('bpause');
+  var cur = bPause;          // elemento enfocado del panel: un botón .pb o la barra de progreso (VOD)
+  var lastMove = 0;
   var isOpen = false, item = null, quals = [], qi = 0, mi = 0, menu = false, isVod = false;
   var hideT = 0, retried = false, loadId = 0, onClose = null, toastT = 0;
   var seekTarget = null, seekFrom = 0, seekStreak = 0, seekLast = 0, seekT = 0;
@@ -26,6 +30,22 @@
   }
   function duration() { return v.duration > 0 && isFinite(v.duration) ? v.duration : (item && item.duration) || 0; }
 
+  /* ---------- botones del panel ---------- */
+  function btns() { return Array.prototype.filter.call(ctl.querySelectorAll('.pb'), function (b) { return !b.hidden; }); }
+  function setFoc(e) {
+    cur.classList.remove('foc');
+    cur = e;
+    cur.classList.add('foc');
+  }
+  function focusDefault() { setFoc(bPause); }
+  function labels() {
+    bPause.textContent = I18n.t(v.paused && v.getAttribute('src') ? 'player.btnPlay' : 'player.btnPause');
+    $('bqual').textContent = I18n.t('player.btnQuality') + (quals[qi] ? ' · ' + quals[qi].name : '');
+    $('bchat').textContent = I18n.t('player.btnChat');
+    $('bchat').classList[Chat.isOn() ? 'add' : 'remove']('act');
+    $('bclose').textContent = I18n.t('player.btnExit');
+  }
+
   /* ---------- avisos (puntos, chat...) ---------- */
   function flash(t, ms) {
     toast.textContent = t;
@@ -37,7 +57,20 @@
   function startPoints() { if (isOpen && !isVod && item) Points.start(item.login, claimed); }
 
   /* ---------- chat ---------- */
-  function applyChat() { el.classList[Chat.isOn() && isOpen && !isVod ? 'add' : 'remove']('chat'); }
+  // Esquina, tamaño, letra y opacidad del chat según los ajustes; el panel y los avisos se apartan del chat.
+  function layoutChat() {
+    var c = Settings.chat(), s = $('chat').style, right = c.pos.charAt(1) === 'r', on = el.classList.contains('chat');
+    s.width = c.w + 'vw'; s.height = '100%';
+    s.top = c.pos.charAt(0) === 't' ? '0' : 'auto'; s.bottom = c.pos.charAt(0) === 'b' ? '0' : 'auto';
+    s.left = right ? 'auto' : '0'; s.right = right ? '0' : 'auto';
+    s.fontSize = c.fs + 'vw';
+    s.background = 'rgba(14,14,16,' + c.op / 100 + ')';
+    var off = Math.min(c.w, 70);                          // con el chat muy ancho, el panel de controles se queda a la vista
+    ovl.style.left = on && !right ? off + 'vw' : '';
+    ovl.style.right = on && right ? off + 'vw' : '';
+    qm.style.right = toast.style.right = on && right ? (off + 3) + 'vw' : '';
+  }
+  function applyChat() { el.classList[Chat.isOn() && isOpen && !isVod ? 'add' : 'remove']('chat'); layoutChat(); }
   function startChat() { if (isOpen && !isVod && item) Chat.attach(item.login); applyChat(); }
   function toggleChat() {
     if (isVod) { flash(I18n.t('player.chatLiveOnly')); return; }
@@ -45,6 +78,7 @@
     if (on) Chat.attach(item.login);
     applyChat();
     flash(I18n.t(on ? 'player.chatOn' : 'player.chatOff'), 1500);
+    labels();
   }
 
   /* ---------- barra, estado y overlay ---------- */
@@ -56,6 +90,7 @@
     } else if (v.paused && v.getAttribute('src')) t = I18n.t('player.paused');
     st.textContent = t;
     st.hidden = !t;
+    labels();
   }
   function updTime() {
     if (!isVod || ovl.hidden) return;
@@ -67,7 +102,7 @@
     ovl.hidden = false;
     updTime();
     clearTimeout(hideT);
-    hideT = setTimeout(function () { if (!menu && !v.paused) ovl.hidden = true; }, 4000);
+    hideT = setTimeout(function () { if (!menu && !v.paused) ovl.hidden = true; }, Settings.hideMs());
   }
 
   function stop() {
@@ -90,7 +125,11 @@
     if (quals[qi]) parts.push(quals[qi].name);
     $('oinfo').textContent = parts.join(' — ');
     bar.hidden = tm.hidden = !isVod;
+    $('bback').hidden = $('bfwd').hidden = !isVod;       // saltar: solo VOD
+    $('bchat').hidden = isVod;                            // chat: solo directos
+    if (cur.hidden) focusDefault();
     $('ohint').textContent = I18n.t(isVod ? 'player.hintVod' : 'player.hintLive');
+    labels();
   }
 
   /* ---------- carga ---------- */
@@ -130,7 +169,7 @@
   function renderMenu() {
     var h = '';
     for (var i = 0; i < quals.length; i++)
-      h += '<div class="qi' + (i === mi ? ' foc' : '') + '">' + (i === qi ? '● ' : '') + quals[i].name + '</div>';
+      h += '<div class="qi' + (i === mi ? ' foc' : '') + '" data-i="' + i + '">' + (i === qi ? '● ' : '') + quals[i].name + '</div>';
     qm.innerHTML = h;
   }
 
@@ -153,6 +192,7 @@
     resetSeek();
     el.hidden = false; qm.hidden = true; st.hidden = true;
     quals = []; qi = 0;
+    focusDefault();
     info(); showOvl(); load(); startPoints(); startChat();
   }
 
@@ -189,34 +229,78 @@
     menu = true; mi = qi; qm.hidden = false; renderMenu();
   }
 
+  function pick(i) {
+    qi = i; store('tq', quals[qi].name);
+    if (isVod) resumeAt = seekTarget !== null ? seekTarget : v.currentTime;   // no perder la posición al cambiar de calidad
+    resetSeek();
+    menu = false; qm.hidden = true; say(I18n.t('loading')); play();
+  }
+
+  // Acción de un botón del panel (con OK o con el puntero).
+  function act(a) {
+    if (a === 'pause') togglePause();
+    else if (a === 'back') seekPress(-1, false);
+    else if (a === 'fwd') seekPress(1, false);
+    else if (a === 'quality') openMenu();
+    else if (a === 'chat') toggleChat();
+    else if (a === 'close') close();
+  }
+
   // Devuelve true si consumió la tecla.
   function key(k) {
     if (!isOpen) return false;
+    var hidden = ovl.hidden;
     showOvl();
     if (menu) {
       if (k === 'up' && mi > 0) mi--;
       else if (k === 'down' && mi < quals.length - 1) mi++;
-      else if (k === 'ok') {
-        qi = mi; store('tq', quals[qi].name);
-        if (isVod) resumeAt = seekTarget !== null ? seekTarget : v.currentTime;   // no perder la posición al cambiar de calidad
-        resetSeek();
-        menu = false; qm.hidden = true; say(I18n.t('loading')); play();
-        return true;
-      }
-      else if (k === 'back' || k === 'green') { menu = false; qm.hidden = true; return true; }
+      else if (k === 'ok') { pick(mi); return true; }
+      else if (k === 'back') { menu = false; qm.hidden = true; return true; }
       renderMenu();
       return true;
     }
     if (k === 'back' || k === 'stop') close();
-    else if (k === 'ok' || k === 'playpause') togglePause();
-    else if (k === 'up' || k === 'green') openMenu();
-    else if (k === 'down' || k === 'channel') toggleChat();
+    else if (k === 'playpause') togglePause();
     else if (k === 'play') { var p = v.play(); if (p && p.catch) p.catch(function () {}); }
     else if (k === 'pause') v.pause();
-    else if (isVod && (k === 'left' || k === 'right')) seekPress(k === 'left' ? -1 : 1, false);
     else if (isVod && (k === 'rw' || k === 'ff')) seekPress(k === 'rw' ? -1 : 1, true);
+    else if (hidden && (k === 'ok' || k === 'left' || k === 'right' || k === 'up' || k === 'down')) {
+      focusDefault();                                  // con el panel oculto: OK pausa y las flechas solo lo muestran
+      if (k === 'ok') togglePause();
+    }
+    else if (cur === bar) {                            // barra de progreso (VOD)
+      if (k === 'left' || k === 'right') seekPress(k === 'left' ? -1 : 1, false);
+      else if (k === 'down') focusDefault();
+      else if (k === 'ok') togglePause();
+    }
+    else {
+      var bs = btns(), i = bs.indexOf(cur);
+      if (k === 'left' && i > 0) setFoc(bs[i - 1]);
+      else if (k === 'right' && i < bs.length - 1) setFoc(bs[i + 1]);
+      else if (k === 'up' && isVod) setFoc(bar);
+      else if (k === 'ok') act(cur.getAttribute('data-a'));
+    }
     return true;
   }
+
+  // Puntero del mando mágico: pulsar un botón o una calidad, y mover el puntero muestra el panel.
+  ctl.addEventListener('click', function (e) {
+    var b = e.target;
+    while (b && b !== ctl && b.className.indexOf('pb') < 0) b = b.parentNode;
+    if (!isOpen || !b || b === ctl) return;
+    showOvl(); setFoc(b); act(b.getAttribute('data-a'));
+  });
+  qm.addEventListener('click', function (e) {
+    var i = e.target.getAttribute && e.target.getAttribute('data-i');
+    if (isOpen && menu && i !== null && i !== undefined) pick(+i);
+  });
+  el.addEventListener('mousemove', function () {
+    var now = Date.now();
+    if (!isOpen || now - lastMove < 300) return;
+    lastMove = now;
+    showOvl();
+  });
+  I18n.onChange(function () { if (isOpen && item) info(); });
 
   v.addEventListener('playing', function () { retried = false; say(''); renderState(); });
   v.addEventListener('waiting', function () { if (isOpen) say(I18n.t('loading')); });
@@ -245,5 +329,7 @@
     else { retried = false; load(); startPoints(); startChat(); }
   });
 
-  w.Player = { open: open, key: key, isOpen: function () { return isOpen; } };
+  Settings.onChange(layoutChat);
+
+  w.Player = { open: open, key: key, isOpen: function () { return isOpen; }, chatShown: function () { return el.classList.contains('chat'); } };
 })(window);

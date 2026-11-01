@@ -101,7 +101,7 @@ function net(o = {}) {
       if (pending-- > 0) return res({ status: 400, message: 'authorization_pending' }, 400);
       return res({ access_token: 'acc1', refresh_token: 'ref1' });
     }
-    if (url.endsWith('/oauth2/validate')) return goodTok(opts.headers.Authorization) ? res({ user_id: '42', login: 'adam' }) : res({ message: 'invalid' }, 401);
+    if (url.endsWith('/oauth2/validate')) return goodTok(opts.headers.Authorization) ? res({ user_id: '42', login: 'demo_user' }) : res({ message: 'invalid' }, 401);
     if (url.endsWith('/oauth2/revoke')) return res({});
     if (url.startsWith('https://api.twitch.tv/helix/')) {
       if (!goodTok(opts.headers.Authorization)) return res({ message: 'Invalid OAuth token' }, 401);
@@ -109,7 +109,7 @@ function net(o = {}) {
       if (url.includes('streams/followed')) return res({ data: [1, 2].map((i) => ({ user_login: 'chan' + i, user_name: 'Chan' + i, game_name: 'Juego', title: 'Sig ' + i, viewer_count: 50 * i, thumbnail_url: 'http://t/{width}x{height}.jpg' })), pagination: {} });
       if (url.includes('channels/followed') && url.includes('after=')) return res({ data: [], pagination: {} });
       if (url.includes('channels/followed')) return res({ data: [1, 2].map((i) => ({ broadcaster_id: String(i), broadcaster_login: 'chan' + i, broadcaster_name: 'Chan' + i })), pagination: { cursor: 'nx' } });
-      if (url.endsWith('/helix/users')) return res({ data: [{ id: '42', login: 'adam', profile_image_url: 'http://avatar/self-300x300.png' }] });
+      if (url.endsWith('/helix/users')) return res({ data: [{ id: '42', login: 'demo_user', profile_image_url: 'http://avatar/self-300x300.png' }] });
       if (url.includes('/users?')) return res({ data: [1, 2].map((i) => ({ id: String(i), profile_image_url: 'http://avatar/' + i })) });
     }
     return res({ message: 'unmocked ' + url }, 404);
@@ -180,7 +180,16 @@ function boot(o = {}) {
     for (let i = 0; i < 8 && focused().getAttribute('data-tab') !== name; i++) key(K.right);
     assert.equal(focused().getAttribute('data-tab'), name, 'no se pudo enfocar la pestaña ' + name);
   };
-  return { w, d, $, key, K, until, focused, cards, focusTab, N, errors, highlighted, sockets };
+  // botones del panel del reproductor: el enfocado, los visibles y ir a uno concreto (data-a)
+  const pb = () => d.querySelector('#octl .pb.foc');
+  const btnNames = () => [...d.querySelectorAll('#octl .pb')].filter((b) => !b.hidden).map((b) => b.getAttribute('data-a'));
+  const goBtn = (a) => {
+    if ($('obar').classList.contains('foc')) key(K.down);
+    for (let i = 0; i < 8; i++) key(K.left);
+    for (let i = 0; i < 8 && pb().getAttribute('data-a') !== a; i++) key(K.right);
+    assert.equal(pb().getAttribute('data-a'), a, 'no se pudo enfocar el botón ' + a);
+  };
+  return { w, d, $, key, K, until, focused, cards, focusTab, N, errors, highlighted, sockets, pb, btnNames, goBtn };
 }
 
 /* ---------- 2) lógica de red ---------- */
@@ -243,7 +252,7 @@ function boot(o = {}) {
   const result = await new Promise((res) => w.Auth.poll(dev, res));
   assert.deepEqual(J(result), { ok: true });
   assert.equal(w.Auth.isLoggedIn(), true);
-  assert.equal(w.Auth.login(), 'adam');
+  assert.equal(w.Auth.login(), 'demo_user');
   assert.equal(JSON.parse(w.localStorage.getItem('tauth')).refresh, 'ref1');
   assert.equal(JSON.parse(w.localStorage.getItem('tauth')).cid, 'cid123');
   assert.equal(t.N.calls.filter((c) => c.url.endsWith('/oauth2/token')).length, 3);
@@ -272,19 +281,19 @@ function boot(o = {}) {
   ok('logout: borra sesión y revoca el token');
 
   // Token caducado al arrancar: se renueva con el refresh token (la app llama a Auth.init sola)
-  const t2 = boot({ clientId: 'cid123', ls: { tauth: JSON.stringify({ access: 'old', refresh: 'r-old', userId: '42', login: 'adam', cid: 'cid123' }) } });
+  const t2 = boot({ clientId: 'cid123', ls: { tauth: JSON.stringify({ access: 'old', refresh: 'r-old', userId: '42', login: 'demo_user', cid: 'cid123' }) } });
   await t2.until(() => JSON.parse(t2.w.localStorage.getItem('tauth') || '{}').access === 'acc2', 'refresh al arrancar');
-  assert.equal(t2.w.Auth.login(), 'adam');
+  assert.equal(t2.w.Auth.login(), 'demo_user');
   ok('arranque con token caducado: refresh automático');
 
   // Refresh inválido: la sesión se descarta
-  const t3 = boot({ clientId: 'cid123', ls: { tauth: JSON.stringify({ access: 'old', refresh: 'bad', userId: '42', login: 'adam', cid: 'cid123' }) } });
+  const t3 = boot({ clientId: 'cid123', ls: { tauth: JSON.stringify({ access: 'old', refresh: 'bad', userId: '42', login: 'demo_user', cid: 'cid123' }) } });
   await t3.until(() => !t3.w.Auth.isLoggedIn(), 'sesión descartada');
   assert.equal(t3.w.localStorage.getItem('tauth'), null);
   ok('arranque con refresh inválido: sesión descartada');
 
   // 401 en Helix a la vez que Auth.init: una sola renovación compartida (refresh token de un solo uso)
-  const t5 = boot({ clientId: 'cid123', ls: { tauth: JSON.stringify({ access: 'stale', refresh: 'r-old', userId: '42', login: 'adam', cid: 'cid123' }) } });
+  const t5 = boot({ clientId: 'cid123', ls: { tauth: JSON.stringify({ access: 'stale', refresh: 'r-old', userId: '42', login: 'demo_user', cid: 'cid123' }) } });
   const r5 = J(await t5.w.Auth.followedStreams(null));
   assert.equal(r5.items.length, 2);
   assert.equal(JSON.parse(t5.w.localStorage.getItem('tauth')).access, 'acc2');
@@ -292,9 +301,9 @@ function boot(o = {}) {
   ok('Helix 401 + init concurrentes: una sola renovación, reintento correcto');
 
   // Una sesión guardada con otro Client ID no sirve (el token no vale para el nuevo): se descarta
-  const t6 = boot({ clientId: 'otro-cliente', ls: { tauth: JSON.stringify({ access: 'acc1', refresh: 'r', userId: '42', login: 'adam', cid: 'cid123' }) } });
+  const t6 = boot({ clientId: 'otro-cliente', ls: { tauth: JSON.stringify({ access: 'acc1', refresh: 'r', userId: '42', login: 'demo_user', cid: 'cid123' }) } });
   assert.equal(t6.w.Auth.isLoggedIn(), false);
-  const t7 = boot({ clientId: 'cid123', ls: { tauth: JSON.stringify({ access: 'acc1', refresh: 'r', userId: '42', login: 'adam', cid: 'cid123' }) } });
+  const t7 = boot({ clientId: 'cid123', ls: { tauth: JSON.stringify({ access: 'acc1', refresh: 'r', userId: '42', login: 'demo_user', cid: 'cid123' }) } });
   assert.equal(t7.w.Auth.isLoggedIn(), true);
   ok('sesión de otro Client ID: se descarta; la del mismo se conserva');
 }
@@ -302,7 +311,7 @@ function boot(o = {}) {
 /* ---------- 3b) puntos automáticos ---------- */
 {
   const TV = 'ue6666qo983tsx6so1t0vnawi233wa';
-  const session = { tauth: JSON.stringify({ access: 'acc1', refresh: 'r', userId: '42', login: 'adam', cid: TV }) };
+  const session = { tauth: JSON.stringify({ access: 'acc1', refresh: 'r', userId: '42', login: 'demo_user', cid: TV }) };
   const gqlCalls = (t) => t.N.calls.filter((c) => c.url.includes('gql') && /ChannelPointsContext|ClaimCommunityPoints/.test(c.opts.body));
 
   // sin sesión: no hace ninguna petición
@@ -313,7 +322,7 @@ function boot(o = {}) {
   assert.equal(t.w.Points.enabled(), false);
 
   // con otro Client ID el GraphQL privado rechazaría el token: desactivado
-  t = boot({ clientId: 'cid123', ls: { tauth: JSON.stringify({ access: 'acc1', userId: '42', login: 'adam', cid: 'cid123' }) } });
+  t = boot({ clientId: 'cid123', ls: { tauth: JSON.stringify({ access: 'acc1', userId: '42', login: 'demo_user', cid: 'cid123' }) } });
   t.w.Points.start('chan1', () => {});
   await sleep(50);
   assert.equal(gqlCalls(t).length, 0);
@@ -389,7 +398,9 @@ function boot(o = {}) {
   await until(() => d.getElementById('v').getAttribute('src'), 'src del vídeo');
   assert.match($('v').getAttribute('src'), /hls\/chan1\.m3u8/);
   assert.equal($('obar').hidden, true, 'un directo no muestra barra de progreso');
-  key(K.up); assert.equal($('qmenu').hidden, false, '▲ abre el menú de calidad');
+  assert.deepEqual(t.btnNames(), ['pause', 'quality', 'chat', 'close'], 'un directo: pausa, calidad, chat y salir');
+  assert.equal(t.pb().getAttribute('data-a'), 'pause', 'el foco empieza en Pausa');
+  key(K.right); key(K.ok); assert.equal($('qmenu').hidden, false, 'el botón Calidad abre el menú');
   key(K.down); key(K.ok);
   assert.match($('v').getAttribute('src'), /AAA\.m3u8/);
   key(K.back); assert.equal(w.Player.isOpen(), false);
@@ -417,14 +428,14 @@ function boot(o = {}) {
   assert.equal($('lc').textContent, 'ABCD1234');
   assert.match($('ls').textContent, /Esperando autorización/);
   await until(() => $('login').hidden, 'cierre del login', 6000);
-  assert.equal($('acct').textContent, 'adam');
+  assert.equal($('acct').textContent, 'demo_user');
   await until(() => $('acct').querySelector('img.av'), 'avatar en el botón');
   assert.equal($('acct').querySelector('img.av').getAttribute('src'), 'http://avatar/self-70x70.png');
-  assert.equal($('acct').textContent, 'adam', 'el nombre sigue ahí junto a la foto');
+  assert.equal($('acct').textContent, 'demo_user', 'el nombre sigue ahí junto a la foto');
   await until(() => cards().length === 2, 'siguiendo tras login');
   assert.notEqual(focused().id, 'acct', 'el foco no debe quedar en el botón de cuenta');
   assert.equal(d.querySelector('#grid .card .ti').textContent, 'Sig 1');
-  ok('Login por QR → "adam" y Siguiendo se recarga con sus directos');
+  ok('Login por QR → "demo_user" y Siguiendo se recarga con sus directos');
 
   // Amarillo: vídeos del canal desde un directo seguido
   key(K.yellow);
@@ -452,7 +463,8 @@ function boot(o = {}) {
   assert.match($('v').getAttribute('src'), /AAA|usher\.ttvnw\.net\/vod\/901/);
   assert.equal($('obar').hidden, false, 'un VOD muestra barra de progreso');
   assert.match($('otime').textContent, /0:00 \/ 1:02:05/);
-  key(K.right);                                              // +10 s no debe romper aunque no haya duración real
+  assert.deepEqual(t.btnNames(), ['back', 'pause', 'fwd', 'quality', 'close'], 'un VOD: saltos, pausa, calidad y salir');
+  key(K.right); key(K.ok);                                   // botón 10 s ▶: no debe romper aunque no haya duración real
   key(K.back); assert.equal(w.Player.isOpen(), false);
   key(K.back);
   assert.equal(cards().length, 2);
@@ -471,21 +483,21 @@ function boot(o = {}) {
 
   // Cerrar sesión: nunca con un OK suelto ni con pulsaciones repetidas
   focusTab('account'); key(K.ok);
-  assert.match($('ls').textContent, /Sesión iniciada como adam/);
+  assert.match($('ls').textContent, /Sesión iniciada como demo_user/);
   await until(() => $('lqr').querySelector('img'), 'foto en la pantalla de cuenta');
   assert.equal($('lqr').querySelector('img').getAttribute('src'), 'http://avatar/self-300x300.png');
   key(K.ok); key(K.ok);                                      // OK inmediatos: se ignoran
   assert.equal(w.Auth.isLoggedIn(), true, 'un OK inmediato no debe cerrar la sesión');
   await sleep(750);
   key(K.ok);                                                 // pide confirmación
-  assert.match($('ls').textContent, /¿Cerrar la sesión de adam\?/);
+  assert.match($('ls').textContent, /¿Cerrar la sesión de demo_user\?/);
   assert.equal(w.Auth.isLoggedIn(), true);
   key(K.ok);                                                 // inmediato: ignorado
   assert.equal(w.Auth.isLoggedIn(), true);
   key(K.back);                                               // cancelar
   assert.equal($('login').hidden, true);
   assert.equal(w.Auth.isLoggedIn(), true, 'cancelar no cierra la sesión');
-  assert.equal($('acct').textContent, 'adam');
+  assert.equal($('acct').textContent, 'demo_user');
   key(K.ok); await sleep(750); key(K.ok); await sleep(750); key(K.ok);
   assert.equal($('acct').textContent, 'Entrar');
   assert.equal(w.Auth.isLoggedIn(), false);
@@ -508,6 +520,7 @@ function boot(o = {}) {
   assert.equal(v.paused, true);
   await until(() => !$('pstate').hidden, 'indicador de pausa');
   assert.match($('pstate').textContent, /En pausa/);
+  assert.match($('bpause').textContent, /Reproducir/, 'en pausa el botón ofrece reproducir');
   assert.equal($('qmenu').hidden, true, 'OK ya no abre el menú de calidad');
   await sleep(4300);
   assert.equal($('ovl').hidden, false, 'en pausa el panel no se oculta');
@@ -516,35 +529,69 @@ function boot(o = {}) {
   await until(() => $('pstate').hidden, 'sin indicador al reanudar');
   ok('reproductor: OK pausa y reanuda (el panel se queda visible en pausa)');
 
-  key(K.up); assert.equal($('qmenu').hidden, false);
+  // el panel oculto: las flechas solo lo muestran, OK pausa
+  await until(() => $('pstate').hidden, 'sin indicador');
+  assert.match($('bpause').textContent, /^Pausa$/);
+  $('ovl').hidden = true;
+  key(K.right);
+  assert.equal($('ovl').hidden, false, 'una flecha muestra el panel');
+  assert.equal(v.paused, false, 'una flecha con el panel oculto no hace nada más');
+  assert.equal(t.pb().getAttribute('data-a'), 'pause');
+  $('ovl').hidden = true;
+  key(K.ok);
+  assert.equal(v.paused, true, 'OK con el panel oculto pausa');
+  assert.equal($('ovl').hidden, false);
+  key(K.ok);
+  assert.equal(v.paused, false);
+  ok('reproductor: con el panel oculto, una flecha lo muestra y OK pausa');
+
+  // el puntero del mando también vale
+  $('bpause').dispatchEvent(new w.Event('click', { bubbles: true }));
+  assert.equal(v.paused, true, 'pulsar el botón Pausa con el puntero');
+  $('bpause').dispatchEvent(new w.Event('click', { bubbles: true }));
+  assert.equal(v.paused, false);
+  await until(() => $('pstate').hidden, 'sin indicador tras el puntero');
+
+  // calidad: botón del panel
+  t.goBtn('quality'); key(K.ok);
+  assert.equal($('qmenu').hidden, false);
   key(K.down); key(K.ok);                                     // elige 1080p
   assert.match(v.getAttribute('src'), /AAA\.m3u8/);
-  key(K.green); assert.equal($('qmenu').hidden, false, 'el botón verde también abre calidad');
+  assert.match($('bqual').textContent, /^Calidad · 1080p60/, 'el botón muestra la calidad actual');
+  t.goBtn('quality'); key(K.ok); assert.equal($('qmenu').hidden, false);
   key(K.back); assert.equal($('qmenu').hidden, true);
   assert.equal(w.Player.isOpen(), true, 'Atrás en el menú solo cierra el menú');
-  ok('reproductor: ▲/verde abren calidad, Atrás solo cierra el menú');
+  ok('reproductor: el botón Calidad abre el menú, Atrás solo lo cierra');
 
-  // ▼ = chat (desactivado por defecto)
+  // botón Chat (desactivado por defecto)
   assert.equal(w.Chat.isOn(), false);
   assert.equal(t.sockets.length, 0, 'sin chat no hay conexión');
-  key(K.down);
+  t.goBtn('chat'); key(K.ok);
   assert.equal(w.Chat.isOn(), true);
+  assert.ok($('bchat').classList.contains('act'), 'el botón Chat se marca al activarlo');
   assert.equal($('chat').hidden, false);
   assert.ok($('player').classList.contains('chat'));
   await until(() => t.sockets.length === 1, 'conexión del chat');
   assert.equal(t.sockets[0].url, 'wss://irc-ws.chat.twitch.tv:443');
-  key(K.down);
+  key(K.ok);
   assert.equal(w.Chat.isOn(), false);
+  assert.ok(!$('bchat').classList.contains('act'));
   assert.equal($('chat').hidden, true);
   assert.equal(t.sockets[0].closed, true, 'al ocultar el chat se cierra la conexión');
   assert.equal(w.localStorage.getItem('chat'), '0');
-  key(K.back);
-  ok('reproductor: ▼ muestra/oculta el chat y solo conecta mientras está visible');
+  t.goBtn('close'); key(K.ok);
+  assert.equal(w.Player.isOpen(), false, 'el botón Salir cierra el reproductor');
+  ok('reproductor: el botón Chat muestra/oculta el chat (solo conecta si está visible) y Salir cierra');
 
   // VOD: saltos acelerados
   w.Player.open({ type: 'video', id: '901', name: 'Chan1', title: 'VOD', date: '', game: '', duration: 3725 }, () => {});
   await until(() => v.getAttribute('src'), 'src del VOD');
   v.__d = 3725; v.__t = 100; v.__seeks = 0;
+  key(K.right); key(K.left);                                  // en los botones las flechas no saltan
+  await sleep(600);
+  assert.equal(v.__seeks, 0, 'las flechas sobre los botones solo mueven el foco');
+  key(K.up);
+  assert.ok($('obar').classList.contains('foc'), '▲ enfoca la barra de progreso');
   key(K.right);
   assert.match($('pstate').textContent, /▶▶ \+0:10\s+→\s+1:50/);
   assert.equal(v.__seeks, 0, 'el salto no se aplica hasta que dejas de pulsar');
@@ -573,13 +620,25 @@ function boot(o = {}) {
   assert.equal(v.__t, 530, 'adelante rápido salta 30 s como mínimo');
   key(K.rw); await sleep(600);
   assert.equal(v.__t, 500);
-  ok('VOD: saltos acelerados (10→10→30→30→60 s…), un solo seek y límites 0 / final');
+  ok('VOD: saltos acelerados con la barra enfocada (10→10→30→30→60 s…), un solo seek y límites 0 / final');
+
+  // botones ◀ 10 s / 10 s ▶ del panel
+  await sleep(800);
+  v.__t = 500;
+  t.goBtn('fwd'); key(K.ok); await sleep(600);
+  assert.equal(v.__t, 510, 'el botón 10 s ▶ salta 10 s');
+  await sleep(800);
+  t.goBtn('back'); key(K.ok); await sleep(600);
+  assert.equal(v.__t, 500, 'el botón ◀ 10 s retrocede 10 s');
+  key(K.up); assert.ok($('obar').classList.contains('foc'));
+  key(K.down); assert.equal(t.pb().getAttribute('data-a'), 'pause', '▼ en la barra vuelve a los botones');
+  ok('VOD: botones de salto ±10 s y ▲ ▼ entre barra y botones');
 
   // cambiar de calidad no pierde la posición (la lista HLS nueva empieza en 0)
   await sleep(800);
   v.__t = 1234; v.__seeks = 0;
   const srcBefore = v.getAttribute('src');
-  key(K.up); key(K.down); key(K.ok);
+  t.goBtn('quality'); key(K.ok); key(K.down); key(K.ok);
   assert.notEqual(v.getAttribute('src'), srcBefore, 'cambia el flujo');
   v.__t = 0;                                                  // el flujo nuevo arranca en 0
   v.dispatchEvent(new w.Event('loadedmetadata'));
@@ -630,8 +689,7 @@ function boot(o = {}) {
   ok('VOD: una calidad que falla vuelve a Auto sin perder la posición y no se vuelve a elegir');
   w.localStorage.removeItem('tq');
 
-  key(K.down);
-  assert.match($('ptoast').textContent, /solo está disponible en directos/);
+  assert.equal($('bchat').hidden, true, 'un VOD no tiene botón de chat');
   assert.equal(t.sockets.length, 1, 'un VOD no abre chat');
   key(K.back);
   ok('VOD: no hay chat');
@@ -755,7 +813,11 @@ function boot(o = {}) {
   assert.equal(d_on(), 'Inicio');
   key(52); assert.equal(d_on(), 'Vídeos'); key(50); assert.equal(d_on(), 'Categorías'); key(49);
   function d_on() { return t.d.querySelector('.tab.on').textContent; }
-  ok('navegación: teclas 1-4 abren las pestañas');
+  key(53); assert.equal(focused(), $('q'), '5 = enfoca Buscar');
+  assert.deepEqual([...t.d.querySelectorAll('#top [data-k]')].map((e) => e.getAttribute('data-k')), ['1', '2', '3', '4', '5', '6'], 'cada pestaña muestra su número');
+  key(54); assert.equal($('login').hidden, false, '6 = abre la cuenta (Entrar)');
+  key(K.back); assert.equal($('login').hidden, true);
+  ok('navegación: teclas 1-6 abren las pestañas, Buscar y la cuenta');
 
   // Atrás: cuadrícula → pestañas → (otra pestaña) Inicio → pestañas de Inicio → aviso → salir
   await until(() => cards().length === 6, 'inicio de nuevo');
@@ -779,7 +841,7 @@ function boot(o = {}) {
 
 /* ---------- 9) idioma (español / inglés) ---------- */
 {
-  const SESSION = { tauth: JSON.stringify({ access: 'acc1', refresh: 'r', userId: '42', login: 'adam', cid: 'ue6666qo983tsx6so1t0vnawi233wa' }) };
+  const SESSION = { tauth: JSON.stringify({ access: 'acc1', refresh: 'r', userId: '42', login: 'demo_user', cid: 'ue6666qo983tsx6so1t0vnawi233wa' }) };
 
   // el idioma es el del sistema: es-* → español, cualquier otro → inglés
   let t = boot({ lang: null });
@@ -848,17 +910,22 @@ function boot(o = {}) {
   await t.until(() => !t.$('ptoast').hidden, 'aviso de puntos en inglés');
   assert.equal(t.$('ptoast').textContent, '+50 points · 1,234');
   await t.until(() => t.$('v').getAttribute('src'), 'src del directo en inglés');
-  assert.match(t.$('ohint').textContent, /^OK pause · ▲ quality · ▼ chat · Back exit$/);
+  assert.match(t.$('ohint').textContent, /^◀ ▶ move around the buttons · OK select · Back exit$/);
+  assert.equal(t.$('bpause').textContent, 'Pause');
+  assert.match(t.$('bqual').textContent, /^Quality · /);
+  assert.equal(t.$('bchat').textContent, 'Chat');
+  assert.equal(t.$('bclose').textContent, 'Exit');
   t.key(t.K.ok);
   await t.until(() => !t.$('pstate').hidden, 'estado de pausa');
   assert.equal(t.$('pstate').textContent, '⏸  Paused');
+  assert.equal(t.$('bpause').textContent, '▶ Play');
   t.key(t.K.back);
   ok('inglés: aviso de puntos con separador de miles inglés, pausa y pistas del reproductor');
 
   // VOD: pistas y calidad de salto en inglés
   t.w.Player.open({ type: 'video', id: '901', name: 'Chan1', title: 'VOD', date: '', game: '', duration: 3725 }, () => {});
   await t.until(() => t.$('v').getAttribute('src'), 'src del VOD en inglés');
-  assert.match(t.$('ohint').textContent, /skip \(press fast to go further\)/);
+  assert.match(t.$('ohint').textContent, /press fast to skip further/);
   assert.match(t.$('oinfo').textContent, /Chan1/);
   t.key(t.K.back);
   ok('inglés: pistas del VOD');
@@ -883,6 +950,151 @@ function boot(o = {}) {
   assert.equal(t.w.I18n.compact(70700), '70,7 K');
   assert.equal(t.w.I18n.thousands(1234567), '1.234.567');
   ok('i18n: formato de números por idioma y fallback de claves');
+}
+
+/* ---------- 10) ajustes (botón Verde) ---------- */
+{
+  const t = boot();
+  const { d, $, key, K, until, focused, cards, w } = t;
+  const rows = () => [...d.querySelectorAll('#srows .si')];
+  const stored = () => JSON.parse(w.localStorage.getItem('settings'));
+  await until(() => cards().length === 6, 'inicio');
+  assert.equal($('settings').hidden, true);
+  assert.equal(focused().getAttribute('data-i'), '0');
+
+  key(K.green);
+  assert.equal($('settings').hidden, false, 'Verde abre los ajustes');
+  assert.equal(w.Settings.isOpen(), true);
+  assert.equal($('settings').className, '', 'fuera del reproductor el panel va centrado');
+  assert.equal(rows().length, 7, '6 ajustes + restablecer');
+  assert.match(rows()[0].textContent, /Pestaña al abrir la aplicación.*Inicio/);
+  assert.match(rows()[1].textContent, /Tamaño de la letra del chat.*Normal/);
+  assert.match(rows()[3].textContent, /Posición del chat.*Arriba derecha/);
+  assert.match(rows()[4].textContent, /Opacidad.*90%/);
+  key(K.down); key(K.down); key(K.down);                      // las flechas no mueven la cuadrícula de detrás
+  assert.equal(focused().getAttribute('data-i'), '0');
+  key(K.ok);                                                  // OK en la posición: siguiente valor
+  assert.equal(w.Settings.get('pos'), 'bl');
+  key(K.up); key(K.up); key(K.up);
+  key(K.ok);                                                  // OK en la pestaña inicial: siguiente valor
+  assert.equal(w.Settings.get('tab'), 'games');
+  assert.equal(stored().tab, 'games', 'se guarda al momento');
+  key(K.green);
+  assert.equal($('settings').hidden, true, 'Verde también cierra');
+  key(K.right); assert.equal(focused().getAttribute('data-i'), '1', 'la navegación vuelve a funcionar');
+  ok('ajustes: Verde abre y cierra, las flechas no tocan la pantalla de detrás y se guarda al momento');
+
+  // límites con ◀ ▶ (no dan la vuelta) y restablecer
+  key(K.green);
+  for (let i = 0; i < 4; i++) key(K.down);                    // opacidad
+  for (let i = 0; i < 15; i++) key(K.left);
+  assert.equal(w.Settings.get('op'), 0, 'la opacidad no baja de 0');
+  for (let i = 0; i < 15; i++) key(K.right);
+  assert.equal(w.Settings.get('op'), 100);
+  key(K.down); key(K.right);                                  // ocultar panel tras
+  assert.equal(w.Settings.hideMs(), 6000);
+  key(K.down); assert.match(rows()[6].textContent, /Restablecer/);
+  key(K.ok);
+  assert.deepEqual(stored(), { tab: 'streams', fs: 'm', size: 25, pos: 'tr', op: 90, hide: 4 }, 'restablecer vuelve a los valores de serie');
+  key(K.back);
+  assert.equal($('settings').hidden, true, 'Atrás cierra');
+  ok('ajustes: límites de ◀ ▶ y restablecer valores por defecto');
+
+  // con la cuenta abierta, Verde no abre los ajustes
+  key(54);
+  assert.equal($('login').hidden, false);
+  key(K.green);
+  assert.equal($('settings').hidden, true);
+  key(K.back);
+  ok('ajustes: Verde se ignora en la pantalla de cuenta');
+}
+
+{
+  // pestaña inicial guardada y valores inválidos
+  let t = boot({ ls: { settings: JSON.stringify({ tab: 'videos' }) } });
+  assert.equal(t.d.querySelector('.tab.on').textContent, 'Vídeos', 'arranca en la pestaña elegida');
+  t = boot({ ls: { settings: '{"tab":"zzz","op":55,"pos":"xx"}' } });
+  assert.equal(t.d.querySelector('.tab.on').textContent, 'Inicio', 'un valor inválido vuelve al de serie');
+  assert.equal(t.w.Settings.chat().op, 90);
+  assert.equal(t.w.Settings.get('pos'), 'tr');
+  t = boot({ ls: { settings: 'no es json' } });
+  assert.equal(t.d.querySelector('.tab.on').textContent, 'Inicio');
+  ok('ajustes: pestaña inicial guardada y tolerancia a datos corruptos');
+}
+
+{
+  // el chat cambia en caliente desde el reproductor
+  const t = boot({ ls: { chat: '1' } });
+  const { d, $, key, K, until, cards, w } = t;
+  const rows = () => [...d.querySelectorAll('#srows .si')];
+  await until(() => cards().length === 6, 'inicio');
+  key(K.ok);
+  await until(() => $('v').getAttribute('src'), 'src del directo');
+  assert.ok($('player').classList.contains('chat'));
+  assert.equal($('chat').style.width, '25vw', 'por defecto: 25vw');
+  assert.equal($('chat').style.height, '100%');
+  assert.equal($('chat').style.top, '0px'); assert.equal($('chat').style.right, '0px');
+  assert.equal($('ovl').style.right, '25vw', 'el panel se aparta del chat');
+
+  const paused = $('v').paused;
+  key(K.green);
+  assert.equal($('settings').className, 'pl al', 'sobre el reproductor el panel se aparta del chat (chat a la derecha → panel a la izquierda)');
+  key(K.ok);                                                  // OK en los ajustes no pausa el vídeo
+  assert.equal($('v').paused, paused);
+  key(K.back);
+  assert.equal(w.Player.isOpen(), true, 'Atrás cierra solo los ajustes');
+  assert.equal($('settings').hidden, true);
+  key(K.green);
+  key(K.down); key(K.down);                                   // tamaño
+  key(K.left);
+  assert.equal($('chat').style.width, '20vw', 'un paso = 5 %'); assert.equal($('chat').style.height, '100%');
+  assert.equal($('ovl').style.right, '20vw');
+  for (let i = 0; i < 40; i++) key(K.left);
+  assert.equal($('chat').style.width, '5vw', 'el tamaño no baja del 5 %');
+  for (let i = 0; i < 40; i++) key(K.right);
+  assert.equal($('chat').style.width, '100vw', 'el tamaño llega al 100 %');
+  assert.equal($('ovl').style.right, '70vw', 'el panel de controles se queda dentro de la pantalla');
+  assert.equal(w.Settings.chat().w, 100);
+  for (let i = 0; i < 15; i++) key(K.left);                   // 100 → 25
+  assert.equal($('chat').style.width, '25vw');
+  key(K.up); key(K.left);                                     // letra pequeña
+  assert.equal($('chat').style.fontSize, '1.15vw');
+  key(K.down); key(K.down); key(K.right); key(K.right);       // posición: abajo derecha
+  assert.equal($('chat').style.bottom, '0px'); assert.equal($('chat').style.top, 'auto');
+  assert.equal($('chat').style.right, '0px');
+  for (let i = 0; i < 3; i++) key(K.left);                    // arriba izquierda
+  assert.equal($('chat').style.left, '0px'); assert.equal($('chat').style.right, 'auto');
+  assert.equal($('ovl').style.left, '25vw'); assert.equal($('ovl').style.right, '', 'ya no se aparta por la derecha');
+  assert.equal($('qmenu').style.right, ''); assert.equal($('ptoast').style.right, '');
+  key(K.down); key(K.left);                                   // opacidad 80
+  assert.match($('chat').style.background, /0\.8\)/);
+  key(K.back);
+  key(K.green);
+  assert.equal($('settings').className, 'pl ar', 'con el chat a la izquierda el panel va a la derecha');
+  key(K.back);
+
+  // el chat apagado: el panel se queda centrado y el panel no deja huecos
+  t.goBtn('chat'); key(K.ok);
+  assert.equal(w.Chat.isOn(), false);
+  assert.equal($('ovl').style.left, '', 'sin chat el panel ocupa todo el ancho');
+  key(K.green);
+  assert.equal($('settings').className, '', 'sin chat visible el panel de ajustes va centrado');
+  key(K.back);
+  key(K.back);
+  assert.equal(w.Player.isOpen(), false);
+  ok('ajustes: el chat cambia en caliente (posición, tamaño, letra, opacidad) y el panel se aparta');
+}
+
+{
+  // inglés
+  const t = boot({ lang: 'en' });
+  await t.until(() => t.cards().length === 6, 'inicio (en)');
+  t.key(t.K.green);
+  assert.equal(t.$('stitle').textContent, 'Settings');
+  assert.match(t.d.querySelector('#srows .si').textContent, /Tab on app start.*Home/);
+  assert.match(t.$('shint').textContent, /Back or Green close/);
+  t.key(t.K.back);
+  ok('ajustes: textos en inglés');
 }
 
 console.log('\nOK');
