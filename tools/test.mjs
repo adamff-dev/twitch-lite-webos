@@ -600,6 +600,32 @@ function boot(o = {}) {
   assert.equal(v.__seeks, 0, 'no arrastra la posición del vídeo anterior');
   ok('VOD: cambiar de calidad o reintentar conserva la posición (una sola vez y sin arrastrarla a otro vídeo)');
 
+  // una calidad que no se puede reproducir (algunos VODs no tienen todas): un reintento y luego vuelve a Auto,
+  // sin perder la posición y sin volver a elegirla en los vídeos siguientes
+  w.Player.key('back');
+  w.localStorage.setItem('tq', '720p60');
+  w.Player.open({ type: 'video', id: '903', name: 'Chan1', title: 'Falla', date: '', game: '', duration: 5000 }, () => {});
+  await until(() => v.getAttribute('src'), 'src con la calidad guardada');
+  assert.match(v.getAttribute('src'), /BBB\.m3u8/, 'arranca con la calidad guardada (720p60)');
+  v.__t = 700;
+  v.dispatchEvent(new w.Event('error'));                      // 1.er fallo: reintento con token nuevo
+  await sleep(50);
+  await until(() => v.getAttribute('src'), 'src tras el reintento');
+  assert.match(v.getAttribute('src'), /BBB\.m3u8/);
+  v.dispatchEvent(new w.Event('error'));                      // 2.º fallo: vuelve a Auto
+  assert.match(v.getAttribute('src'), /usher\.ttvnw\.net\/vod\/903\.m3u8/, 'cae a Auto');
+  assert.match($('ptoast').textContent, /720p60 no está disponible/);
+  v.__t = 0; v.__seeks = 0;
+  v.dispatchEvent(new w.Event('loadedmetadata'));
+  assert.equal(v.__t, 700, 'conserva la posición al caer a Auto');
+  assert.notEqual($('pmsg').textContent, 'No se pudo reproducir');
+  w.Player.key('back');
+  w.Player.open({ type: 'video', id: '904', name: 'Chan1', title: 'Siguiente', date: '', game: '', duration: 5000 }, () => {});
+  await until(() => v.getAttribute('src'), 'src del siguiente');
+  assert.match(v.getAttribute('src'), /usher\.ttvnw\.net\/vod\/904\.m3u8/, 'no vuelve a elegir la calidad que falló');
+  ok('VOD: una calidad que falla vuelve a Auto sin perder la posición y no se vuelve a elegir');
+  w.localStorage.removeItem('tq');
+
   key(K.down);
   assert.match($('ptoast').textContent, /solo está disponible en directos/);
   assert.equal(t.sockets.length, 1, 'un VOD no abre chat');

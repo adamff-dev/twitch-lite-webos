@@ -9,6 +9,7 @@
   var hideT = 0, retried = false, loadId = 0, onClose = null, toastT = 0;
   var seekTarget = null, seekFrom = 0, seekStreak = 0, seekLast = 0, seekT = 0;
   var resumeAt = 0;          // posición a recuperar al cambiar de calidad o reintentar un VOD
+  var badQ = {};             // calidades que han fallado en esta sesión (algunos VODs no tienen todas)
   var STEPS = [10, 10, 30, 30, 60, 60, 120, 120, 300];     // segundos por pulsación según la racha de pulsaciones rápidas
 
   function say(t) { pm.textContent = t || ''; pm.hidden = !t; }
@@ -120,7 +121,7 @@
       if (id !== loadId) return;
       quals = [{ name: 'Auto', url: r.master }].concat(r.variants);
       var saved = store('tq'); qi = 0;
-      for (var i = 0; i < quals.length; i++) if (quals[i].name === saved) qi = i;
+      for (var i = 0; i < quals.length; i++) if (quals[i].name === saved && !badQ[saved]) qi = i;
       play();
     }).catch(function (e) {
       if (id !== loadId) return;
@@ -219,7 +220,7 @@
     return true;
   }
 
-  v.addEventListener('playing', function () { say(''); renderState(); });
+  v.addEventListener('playing', function () { retried = false; say(''); renderState(); });
   v.addEventListener('waiting', function () { if (isOpen) say('Cargando…'); });
   v.addEventListener('timeupdate', updTime);
   v.addEventListener('loadedmetadata', applyResume);
@@ -229,6 +230,13 @@
   v.addEventListener('error', function () {
     if (!isOpen || !v.getAttribute('src')) return;
     if (!retried) { retried = true; keepPosition(); load(); }   // un reintento con token nuevo, sin perder la posición
+    else if (qi > 0 && quals.length) {                          // esa calidad no se puede reproducir: vuelve a Auto
+      badQ[quals[qi].name] = true;
+      keepPosition();
+      flash('La calidad ' + quals[qi].name + ' no está disponible en este vídeo. Usando Auto', 4000);
+      qi = 0; retried = false;
+      say('Cargando…'); play();
+    }
     else say('No se pudo reproducir');
   });
 
