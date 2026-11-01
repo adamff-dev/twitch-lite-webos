@@ -5,6 +5,7 @@
   var SCOPES = 'user:read:follows', PAGE = 24;
   var st = {};
   try { st = JSON.parse(localStorage.getItem('tauth')) || {}; } catch (e) {}
+  if (st.access && st.cid !== w.CONFIG.CLIENT_ID) st = {};   // sesión de otro Client ID: no sirve, hay que volver a entrar
 
   function save() { try { localStorage.setItem('tauth', JSON.stringify(st)); } catch (e) {} }
   function cid() { return w.CONFIG.CLIENT_ID; }
@@ -22,6 +23,7 @@
 
   function isLoggedIn() { return !!st.access; }
   function login() { return st.login || ''; }
+  function token() { return st.access || ''; }
 
   function clear() { st = {}; try { localStorage.removeItem('tauth'); } catch (e) {} }
 
@@ -70,7 +72,10 @@
     return postForm(OAUTH + 'device', { client_id: cid(), scopes: SCOPES }).then(function (r) {
       if (!r.ok) throw new Error(r.json.message || ('HTTP ' + r.status));
       var j = r.json;
-      return { deviceCode: j.device_code, userCode: j.user_code, uri: j.verification_uri, expiresIn: j.expires_in || 1800, interval: j.interval || 5 };
+      // Algunos clientes reciben la URL sin el código: se añade para que la página de Twitch lo autocomplete.
+      var uri = j.verification_uri || 'https://www.twitch.tv/activate';
+      if (uri.indexOf('device-code=') < 0) uri += (uri.indexOf('?') < 0 ? '?' : '&') + 'device-code=' + encodeURIComponent(j.user_code);
+      return { deviceCode: j.device_code, userCode: j.user_code, uri: uri, expiresIn: j.expires_in || 1800, interval: j.interval || 5 };
     });
   }
 
@@ -87,7 +92,7 @@
       }).then(function (r) {
         if (dead) return;
         if (r.ok && r.json.access_token) {
-          st = { access: r.json.access_token, refresh: r.json.refresh_token };
+          st = { access: r.json.access_token, refresh: r.json.refresh_token, cid: cid() };
           save();
           return identify().then(function () { if (!dead) done({ ok: true }); }, function (e) { if (!dead) done({ error: e.message }); });
         }
@@ -151,7 +156,7 @@
   }
 
   w.Auth = {
-    init: init, isLoggedIn: isLoggedIn, login: login, logout: logout, begin: begin, poll: poll,
+    init: init, isLoggedIn: isLoggedIn, login: login, token: token, logout: logout, begin: begin, poll: poll,
     followedStreams: followedStreams, followedChannels: followedChannels
   };
 })(window);

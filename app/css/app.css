@@ -26,6 +26,7 @@ html,body{margin:0;height:100%;background:#0e0e10;color:#efeff1;overflow:hidden;
 #player{position:fixed;top:0;left:0;right:0;bottom:0;background:#000;z-index:9}
 #v{width:100%;height:100%;background:#000}
 #pmsg{position:absolute;top:45%;left:0;right:0;text-align:center;font-size:2vw;text-shadow:0 0 .5vw #000}
+#ptoast{position:absolute;top:3vw;right:3vw;padding:.8vw 1.6vw;background:rgba(145,70,255,.92);border-radius:.6vw;font-size:1.5vw;font-weight:bold}
 #ovl{position:absolute;left:0;right:0;bottom:0;padding:5vw 3vw 2vw;background:rgba(0,0,0,.6)}
 #oname{font-size:2.2vw;font-weight:bold}
 #oinfo{color:#d0d0d8;margin-top:.4vw}

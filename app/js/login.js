@@ -20,8 +20,7 @@
     qr.innerHTML = ''; code.textContent = '';
     if (!w.CONFIG.CLIENT_ID) {
       mode = 'noclient';
-      stat.textContent = 'Falta el Client ID de Twitch.\n1) Crea una app en dev.twitch.tv/console con tipo de cliente "Público".\n' +
-        '2) Compila con TWITCH_CLIENT_ID=<tu id> npm run package (o edita app/js/config.js).';
+      stat.textContent = 'Falta el Client ID de Twitch.\nEdita app/js/config.js o compila con TWITCH_CLIENT_ID=<id> npm run package.';
       hint.textContent = 'Atrás: cerrar';
       return;
     }

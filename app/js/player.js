@@ -4,7 +4,16 @@
   var $ = function (i) { return document.getElementById(i); };
   var el = $('player'), v = $('v'), ovl = $('ovl'), qm = $('qmenu'), pm = $('pmsg'), bar = $('obar'), fill = $('ofill'), tm = $('otime');
   var isOpen = false, item = null, quals = [], qi = 0, mi = 0, menu = false, isVod = false;
-  var hideT = 0, retried = false, loadId = 0, onClose = null;
+  var hideT = 0, retried = false, loadId = 0, onClose = null, toastT = 0, toast = $('ptoast');
+
+  function fmtN(n) { return String(Math.round(+n || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, '.'); }
+  function claimed(earned, total) {
+    toast.textContent = '+' + fmtN(earned) + ' puntos' + (total ? ' · ' + fmtN(total) : '');
+    toast.hidden = false;
+    clearTimeout(toastT);
+    toastT = setTimeout(function () { toast.hidden = true; }, 8000);
+  }
+  function startPoints() { if (isOpen && !isVod && item) Points.start(item.login, claimed); }
 
   function say(t) { pm.textContent = t || ''; pm.hidden = !t; }
   function store(k, val) {
@@ -88,6 +97,7 @@
 
   function close() {
     loadId++; isOpen = false; menu = false; clearTimeout(hideT);
+    Points.stop(); clearTimeout(toastT); toast.hidden = true;
     stop(); say(''); el.hidden = true; qm.hidden = true; ovl.hidden = true;
     item = null; quals = [];
     if (onClose) onClose();
@@ -97,7 +107,7 @@
     item = it; onClose = cb; isOpen = true; retried = false; menu = false; isVod = it.type === 'video';
     el.hidden = false; qm.hidden = true;
     quals = []; qi = 0;
-    info(); showOvl(); load();
+    info(); showOvl(); load(); startPoints();
   }
 
   function seek(d) {
@@ -146,7 +156,7 @@
   // Si la app pasa a segundo plano, se libera el decoder; al volver se pide un token nuevo.
   document.addEventListener('visibilitychange', function () {
     if (!isOpen) return;
-    if (document.hidden) { loadId++; stop(); } else { retried = false; load(); }
+    if (document.hidden) { loadId++; stop(); Points.stop(); } else { retried = false; load(); startPoints(); }
   });
 
   w.Player = { open: open, key: key, isOpen: function () { return isOpen; } };

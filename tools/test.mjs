@@ -53,6 +53,8 @@ const stream = (i) => ({
 function net(o = {}) {
   const calls = [];
   let pending = o.pending ?? 2;
+  let devUri = 'https://www.twitch.tv/activate?device-code=ABCD1234';
+  let claimable = o.claim ?? false;
   const res = (body, status = 200, text) => Promise.resolve({
     ok: status < 400, status, json: () => Promise.resolve(body), text: () => Promise.resolve(text ?? JSON.stringify(body)),
   });
@@ -62,6 +64,13 @@ function net(o = {}) {
     const body = opts.body;
     if (url.startsWith('https://gql.twitch.tv')) {
       const j = JSON.parse(body);
+      const h = opts.headers || {};
+      if (j.operationName === 'ChannelPointsContext' || (Array.isArray(j) && j[0].operationName === 'ClaimCommunityPoints')) {
+        if (!/^OAuth acc[12]$/.test(h.Authorization || '')) return res({ error: 'Unauthorized', status: 401, message: 'The "Authorization" token is invalid.' }, 401);
+        if (j.operationName) return res({ data: { community: { id: 'cmty1', channel: { self: { communityPoints: { balance: 1000, availableClaim: claimable ? { id: 'claim1' } : null } } } } } });
+        claimable = false;
+        return res([{ data: { claimCommunityPoints: { claim: { pointsEarnedTotal: 50 }, currentPoints: 1234 } } }]);
+      }
       if (Array.isArray(j)) {
         const v = j[0].variables;
         if (o.offline) return res([{ data: { streamPlaybackAccessToken: null, videoPlaybackAccessToken: null } }]);
@@ -85,7 +94,7 @@ function net(o = {}) {
       return res({ errors: [{ message: 'unmocked ' + q }] });
     }
     if (url.startsWith('https://usher.ttvnw.net')) return res(null, o.usher ?? 200, MASTER);
-    if (url.endsWith('/oauth2/device')) return res({ device_code: 'dc', user_code: 'ABCD1234', verification_uri: 'https://www.twitch.tv/activate?device-code=ABCD1234', expires_in: 60, interval: 0.01 });
+    if (url.endsWith('/oauth2/device')) return res({ device_code: 'dc', user_code: 'ABCD1234', verification_uri: devUri, expires_in: 60, interval: 0.01 });
     if (url.endsWith('/oauth2/token')) {
       const p = Object.fromEntries(body.split('&').map((kv) => kv.split('=').map(decodeURIComponent)));
       if (p.grant_type === 'refresh_token') return p.refresh_token === 'r-old' ? res({ access_token: 'acc2', refresh_token: 'ref2' }) : res({ message: 'Invalid refresh token' }, 400);
@@ -104,7 +113,7 @@ function net(o = {}) {
     }
     return res({ message: 'unmocked ' + url }, 404);
   };
-  return { fetch, calls };
+  return { fetch, calls, setUri: (u) => { devUri = u; }, setClaim: (v) => { claimable = v; } };
 }
 
 /* ---------- arranque de la app en jsdom ---------- */
@@ -131,7 +140,7 @@ function boot(o = {}) {
   if (o.beforeScripts) o.beforeScripts(w);
   for (const f of scripts) {
     let code = fs.readFileSync(path.join(appDir, f), 'utf8');
-    if (f === 'js/config.js' && o.clientId) code = code.replace("CLIENT_ID: ''", `CLIENT_ID: '${o.clientId}'`);
+    if (f === 'js/config.js' && o.clientId) code = code.replace(/CLIENT_ID: '[^']*'/, `CLIENT_ID: '${o.clientId}'`);
     w.eval(code);
   }
   const d = w.document;
@@ -203,11 +212,15 @@ function boot(o = {}) {
   // Device Code Grant completo (2 respuestas "pending" antes de autorizar)
   const t = boot();
   const { w } = t;
+  w.CONFIG.CLIENT_ID = '';
   const d = await w.Auth.begin().catch((e) => e);
   assert.equal(d.message, 'noclient', 'sin Client ID debe rechazar');
   w.CONFIG.CLIENT_ID = 'cid123';
   const dev = J(await w.Auth.begin());
   assert.deepEqual([dev.userCode, dev.deviceCode], ['ABCD1234', 'dc']);
+  assert.equal(dev.uri, 'https://www.twitch.tv/activate?device-code=ABCD1234');
+  t.N.setUri('https://www.twitch.tv/activate');                 // URL sin código -> se añade
+  assert.equal(J(await w.Auth.begin()).uri, 'https://www.twitch.tv/activate?device-code=ABCD1234');
   const call = t.N.calls.find((c) => c.url.endsWith('/oauth2/device'));
   assert.equal(call.opts.body, 'client_id=cid123&scopes=user%3Aread%3Afollows');
   const result = await new Promise((res) => w.Auth.poll(dev, res));
@@ -215,6 +228,7 @@ function boot(o = {}) {
   assert.equal(w.Auth.isLoggedIn(), true);
   assert.equal(w.Auth.login(), 'adam');
   assert.equal(JSON.parse(w.localStorage.getItem('tauth')).refresh, 'ref1');
+  assert.equal(JSON.parse(w.localStorage.getItem('tauth')).cid, 'cid123');
   assert.equal(t.N.calls.filter((c) => c.url.endsWith('/oauth2/token')).length, 3);
   ok('device flow: pending → pending → token → identificación');
 
@@ -235,24 +249,96 @@ function boot(o = {}) {
   ok('logout: borra sesión y revoca el token');
 
   // Token caducado al arrancar: se renueva con el refresh token (la app llama a Auth.init sola)
-  const t2 = boot({ clientId: 'cid123', ls: { tauth: JSON.stringify({ access: 'old', refresh: 'r-old', userId: '42', login: 'adam' }) } });
+  const t2 = boot({ clientId: 'cid123', ls: { tauth: JSON.stringify({ access: 'old', refresh: 'r-old', userId: '42', login: 'adam', cid: 'cid123' }) } });
   await t2.until(() => JSON.parse(t2.w.localStorage.getItem('tauth') || '{}').access === 'acc2', 'refresh al arrancar');
   assert.equal(t2.w.Auth.login(), 'adam');
   ok('arranque con token caducado: refresh automático');
 
   // Refresh inválido: la sesión se descarta
-  const t3 = boot({ clientId: 'cid123', ls: { tauth: JSON.stringify({ access: 'old', refresh: 'bad', userId: '42', login: 'adam' }) } });
+  const t3 = boot({ clientId: 'cid123', ls: { tauth: JSON.stringify({ access: 'old', refresh: 'bad', userId: '42', login: 'adam', cid: 'cid123' }) } });
   await t3.until(() => !t3.w.Auth.isLoggedIn(), 'sesión descartada');
   assert.equal(t3.w.localStorage.getItem('tauth'), null);
   ok('arranque con refresh inválido: sesión descartada');
 
   // 401 en Helix a la vez que Auth.init: una sola renovación compartida (refresh token de un solo uso)
-  const t5 = boot({ clientId: 'cid123', ls: { tauth: JSON.stringify({ access: 'stale', refresh: 'r-old', userId: '42', login: 'adam' }) } });
+  const t5 = boot({ clientId: 'cid123', ls: { tauth: JSON.stringify({ access: 'stale', refresh: 'r-old', userId: '42', login: 'adam', cid: 'cid123' }) } });
   const r5 = J(await t5.w.Auth.followedStreams(null));
   assert.equal(r5.items.length, 2);
   assert.equal(JSON.parse(t5.w.localStorage.getItem('tauth')).access, 'acc2');
   assert.equal(t5.N.calls.filter((c) => c.url.endsWith('/oauth2/token')).length, 1, 'debe haber una sola renovación');
   ok('Helix 401 + init concurrentes: una sola renovación, reintento correcto');
+
+  // Una sesión guardada con otro Client ID no sirve (el token no vale para el nuevo): se descarta
+  const t6 = boot({ clientId: 'otro-cliente', ls: { tauth: JSON.stringify({ access: 'acc1', refresh: 'r', userId: '42', login: 'adam', cid: 'cid123' }) } });
+  assert.equal(t6.w.Auth.isLoggedIn(), false);
+  const t7 = boot({ clientId: 'cid123', ls: { tauth: JSON.stringify({ access: 'acc1', refresh: 'r', userId: '42', login: 'adam', cid: 'cid123' }) } });
+  assert.equal(t7.w.Auth.isLoggedIn(), true);
+  ok('sesión de otro Client ID: se descarta; la del mismo se conserva');
+}
+
+/* ---------- 3b) puntos automáticos ---------- */
+{
+  const TV = 'ue6666qo983tsx6so1t0vnawi233wa';
+  const session = { tauth: JSON.stringify({ access: 'acc1', refresh: 'r', userId: '42', login: 'adam', cid: TV }) };
+  const gqlCalls = (t) => t.N.calls.filter((c) => c.url.includes('gql') && /ChannelPointsContext|ClaimCommunityPoints/.test(c.opts.body));
+
+  // sin sesión: no hace ninguna petición
+  let t = boot();
+  t.w.Points.start('chan1', () => {});
+  await sleep(50);
+  assert.equal(gqlCalls(t).length, 0);
+  assert.equal(t.w.Points.enabled(), false);
+
+  // con otro Client ID el GraphQL privado rechazaría el token: desactivado
+  t = boot({ clientId: 'cid123', ls: { tauth: JSON.stringify({ access: 'acc1', userId: '42', login: 'adam', cid: 'cid123' }) } });
+  t.w.Points.start('chan1', () => {});
+  await sleep(50);
+  assert.equal(gqlCalls(t).length, 0);
+  ok('puntos: desactivados sin sesión o con un Client ID que no es el de TV');
+
+  // sesión válida y sin cofre: consulta pero no reclama
+  t = boot({ ls: session });
+  assert.equal(t.w.Points.enabled(), true);
+  t.w.Points.start('chan1', () => assert.fail('no debe reclamar'));
+  await t.until(() => gqlCalls(t).length === 1, 'consulta de puntos');
+  await sleep(50);
+  assert.equal(gqlCalls(t).length, 1, 'sin cofre no debe reclamar');
+  const h = gqlCalls(t)[0].opts.headers;
+  assert.equal(h['Client-Id'], TV);
+  assert.equal(h.Authorization, 'OAuth acc1');
+  assert.equal(h['X-Device-Id'].length, 32);
+  t.w.Points.stop();
+  ok('puntos: consulta con las cabeceras del cliente de TV y no reclama si no hay cofre');
+
+  // con cofre: reclama y avisa con lo ganado y el total
+  t = boot({ ls: session, claim: true });
+  let got = null;
+  t.w.Points.start('chan1', (earned, total) => { got = [earned, total]; });
+  await t.until(() => got, 'reclamo del cofre');
+  assert.deepEqual(got, [50, 1234]);
+  const calls = gqlCalls(t);
+  assert.equal(calls.length, 2);
+  assert.equal(JSON.parse(calls[1].opts.body)[0].variables.input.claimID, 'claim1');
+  assert.equal(JSON.parse(calls[1].opts.body)[0].variables.input.channelID, 'cmty1');
+  assert.ok(calls[1].opts.headers['api-consumer-type']);
+  t.w.Points.stop();
+  await t.w.Points.tick();                                   // tras stop no hace nada
+  assert.equal(gqlCalls(t).length, 2);
+  ok('puntos: reclama el cofre y devuelve +50 / total 1234');
+
+  // dentro del reproductor: aviso visible y se limpia al salir
+  t = boot({ ls: session, claim: true });
+  await t.until(() => t.cards().length === 6, 'inicio');
+  t.key(t.K.ok);
+  await t.until(() => !t.$('ptoast').hidden, 'aviso de puntos');
+  assert.equal(t.$('ptoast').textContent, '+50 puntos · 1.234');
+  t.key(t.K.back);
+  assert.equal(t.$('ptoast').hidden, true);
+  const before = gqlCalls(t).length;
+  t.N.setClaim(true);
+  await sleep(80);
+  assert.equal(gqlCalls(t).length, before, 'al salir deja de consultar');
+  ok('puntos en el reproductor: aviso "+50 puntos · 1.234" y se detiene al salir');
 }
 
 /* ---------- 4) QR ---------- */
@@ -294,6 +380,7 @@ function boot(o = {}) {
   ok('Siguiendo sin sesión: pide iniciar sesión');
 
   // Login: sin Client ID
+  w.CONFIG.CLIENT_ID = '';
   focusTab('account'); key(K.ok);
   assert.equal($('login').hidden, false);
   assert.match($('ls').textContent, /Falta el Client ID/);

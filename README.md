@@ -4,15 +4,19 @@ Cliente ligero de Twitch para TVs LG webOS. Sin frameworks, un único `index.htm
 
 ## Login con Twitch (QR)
 
-Usa el *Device Code Grant* oficial de Twitch: la TV muestra un QR y un código; escaneas con el móvil, inicias sesión y la TV queda vinculada. Scope mínimo: `user:read:follows`.
+Usa el *Device Code Grant* de Twitch: la TV muestra un QR (con el código ya incluido) y un código; escaneas con el móvil, inicias sesión y la TV queda vinculada. Permiso pedido: `user:read:follows`.
 
-Necesitas un **Client ID propio** (gratis):
+Por defecto inicia sesión con el **Client ID de la app de TV de Twitch** (`app/js/config.js`). Es el único cuyo token también acepta el GraphQL privado de Twitch, necesario para los puntos automáticos. Por eso, en la pantalla de autorización de Twitch la solicitante aparece como la app oficial de Twitch.
 
-1. https://dev.twitch.tv/console → *Register Your Application*.
-2. **Client Type: Public** (imprescindible para el flujo de dispositivo; no hace falta secret). Redirect URL: `http://localhost`.
-3. Compila con tu ID: `TWITCH_CLIENT_ID=tu_id npm run package` (o edita `app/js/config.js`).
+> **Aviso:** usar el cliente oficial y la API privada no está permitido por las condiciones de Twitch y puede dejar de funcionar en cualquier momento o afectar a tu cuenta. Es tu decisión.
 
-Sin Client ID la app funciona igual (Inicio, Categorías, Buscar); solo Siguiendo/Vídeos piden sesión.
+Alternativa oficial: registra tu propia app en https://dev.twitch.tv/console (**Client Type: Public**, redirect `http://localhost`) y compila con `TWITCH_CLIENT_ID=tu_id npm run package`. Todo funciona igual **salvo los puntos automáticos**.
+
+Sin sesión la app funciona (Inicio, Categorías, Buscar); Siguiendo y Vídeos piden sesión.
+
+## Puntos del canal automáticos
+
+Mientras ves un directo con la sesión iniciada, cada 60 s se comprueba si hay un cofre de bonificación y se reclama solo. En el reproductor aparece un aviso (`+50 puntos · 1.234`). Para desactivarlo: `localStorage.setItem('ptsOff','1')`.
 
 ## Pantallas
 
@@ -29,7 +33,7 @@ Sin Client ID la app funciona igual (Inicio, Categorías, Buscar); solo Siguiend
 
 ```
 npm test                 # compatibilidad Chromium 53 + red simulada + flujos de UI con jsdom
-TWITCH_CLIENT_ID=xxx npm run package   # build -> dist/ y .ipk en out/
+npm run package         # build -> dist/ y .ipk en out/  (opcional: TWITCH_CLIENT_ID=xxx)
 ares-install -d <tv> out/com.lighttwitch.app_0.1.0_all.ipk
 ares-launch  -d <tv> com.lighttwitch.app
 ares-inspect -d <tv> com.lighttwitch.app --open   # DevTools remotas
@@ -53,6 +57,7 @@ Prueba en escritorio: abrir `app/index.html` en Chrome (flechas, Enter, Esc/Back
 
 - `app/js/api.js` — GraphQL de Twitch (sin sesión) + token y master playlist HLS
 - `app/js/auth.js` — Device Code Grant, refresh de token, Helix (seguidos)
+- `app/js/points.js` — reclamo automático de puntos (GraphQL privado, requiere el cliente de TV)
 - `app/js/qr.js` — generador de QR propio (verificado con OpenCV, ver `tools/qr-check`)
 - `app/js/login.js`, `player.js`, `app.js` — pantalla de cuenta, reproductor, vistas y mando
 - `tools/build.mjs` — inlina CSS/JS, minifica ligeramente y genera iconos

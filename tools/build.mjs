@@ -15,7 +15,7 @@ const clientId = (process.env.TWITCH_CLIENT_ID || '').trim();
 if (clientId && !/^[a-z0-9]+$/i.test(clientId)) throw new Error('TWITCH_CLIENT_ID no válido');
 const read = (p) => {
   const s = fs.readFileSync(path.join(src, p), 'utf8');
-  return p === 'js/config.js' && clientId ? s.replace("CLIENT_ID: ''", `CLIENT_ID: '${clientId}'`) : s;
+  return p === 'js/config.js' && clientId ? s.replace(/CLIENT_ID: '[^']*'/, `CLIENT_ID: '${clientId}'`) : s;
 };
 
 const minCss = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\s+/g, ' ').replace(/\s*([{};:,>])\s*/g, '$1').trim();
@@ -68,5 +68,5 @@ fs.writeFileSync(path.join(out, 'icon.png'), png(80));
 fs.writeFileSync(path.join(out, 'largeIcon.png'), png(130));
 
 const kb = (f) => (fs.statSync(path.join(out, f)).size / 1024).toFixed(1) + ' KB';
-console.log(clientId ? 'Client ID inyectado' : 'AVISO: sin TWITCH_CLIENT_ID (el login por QR no funcionará)');
+console.log(clientId ? 'Client ID personalizado (los puntos automáticos solo funcionan con el de la app de TV)' : 'Client ID por defecto (app de TV de Twitch)');
 console.log(`dist/index.html ${kb('index.html')} · icon ${kb('icon.png')} · largeIcon ${kb('largeIcon.png')}`);
