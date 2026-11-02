@@ -12,6 +12,7 @@
   var ITEMS = [
     { k: 'tab', def: 'streams', vals: ['streams', 'games', 'following', 'videos'], tr: true },
     { k: 'cfilter', def: 'auto', vals: ['auto', 'off'], tr: true },     // contenido de mi país (Inicio y categorías)
+    { k: 'unmute', def: 'on', vals: ['on', 'off'], tr: true },          // audio de los tramos silenciados de un VOD
     { k: 'fs', def: 'm', vals: ['s', 'm', 'l', 'xl'], tr: true },
     { k: 'size', def: 25, vals: range(5, 100, 5), unit: '%' },
     { k: 'height', def: 100, vals: range(5, 100, 5), unit: '%' },      // alto del chat (% de la pantalla)

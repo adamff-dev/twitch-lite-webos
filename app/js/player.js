@@ -1,4 +1,4 @@
-/* Reproductor: <video> nativo de webOS (HLS por hardware, sin hls.js). Directos y VODs.
+/* Reproductor: <video> nativo de webOS (HLS por hardware). Los VODs con audio silenciado usan hls.js bajo demanda.
    Todo se maneja con botones del panel inferior: las flechas mueven el foco, OK activa (◀ 10 s, pausa, 10 s ▶,
    calidad, chat, salir) y en un VOD la barra de progreso también se enfoca para saltar (◀ ▶, acelerado).
    Con el panel oculto, OK pausa y cualquier flecha lo muestra. Atrás sale; las teclas multimedia siguen valiendo. */
@@ -21,6 +21,7 @@
   var AD_TAIL = 2;           // s que sigue en silencio tras acabar el anuncio (la posición estimada no es exacta)
   var badQ = {};           // calidades que han fallado en esta sesión (algunos VODs no tienen todas)
   var STEPS = [10, 10, 30, 30, 60, 60, 120, 120, 300];     // segundos por pulsación según la racha de pulsaciones rápidas
+  var hls = null, hlsStarting = false, unmuteFailed = false, hlsErrs = 0;
 
   function say(t) { pm.textContent = t || ''; pm.hidden = !t; }
   function store(k, val) {
@@ -115,11 +116,18 @@
     hideT = setTimeout(function () { if (!menu && !v.paused) ovl.hidden = true; }, Settings.hideMs());
   }
 
-  function stop() {
+  function stopMedia() {
     try { v.pause(); } catch (e) {}
     v.removeAttribute('src');
     v.load();                 // libera el decoder
   }
+  function stopHls() {
+    hlsStarting = false;
+    var old = hls;
+    hls = null;
+    if (old) { try { old.destroy(); } catch (e) {} }
+  }
+  function stop() { stopHls(); stopMedia(); }
 
   function info() {
     var parts = [];
@@ -191,8 +199,78 @@
     if (isVod && item && isOpen && v.getAttribute('src') && !resumeAt) Resume.save(item.id, v.currentTime, duration(), force);
   }
 
+  function probeUrl() {
+    return qi > 0 ? quals[qi].url : (quals.length > 1 ? quals[1].url : (quals[0] ? quals[0].url : ''));
+  }
+
+  function hlsFail() {
+    if (!hls) return;
+    unmuteFailed = true;
+    keepPosition();
+    stopHls();
+    flash(I18n.t('player.unmuteFailed'), 4000);
+    play();
+  }
+
+  // Carga hls.js bajo demanda y reproduce el VOD por MSE para pedir los segmentos sin "-muted".
+  function startHls(id) {
+    if (!isOpen || id !== loadId || hlsStarting || unmuteFailed || !w.Unmute) return;
+    if (hls) { keepPosition(); stopHls(); }
+    var source = quals[qi] ? quals[qi].url : '';
+    if (!source) return;
+    hlsStarting = true;
+    hlsErrs = 0;
+    flash(I18n.t('player.unmuteOn'), 3000);
+    w.Unmute.start(source, function (Hls, L) {
+      if (!isOpen || id !== loadId || !hlsStarting) { hlsStarting = false; return; }
+      hlsStarting = false;
+      var wasPlaying = !v.paused;
+      keepPosition();
+      stopMedia();
+      var inst = new Hls({
+        pLoader: L.pLoader, fLoader: L.fLoader, enableWorker: true,
+        maxBufferLength: 30, maxMaxBufferLength: 60, maxBufferSize: 30 * 1000 * 1000
+      });
+      hls = inst;
+      inst.on(Hls.Events.ERROR, function (ev, data) {
+        if (!data || !data.fatal || hls !== inst) return;
+        if (++hlsErrs > 2) { hlsFail(); return; }
+        if (data.type === Hls.ErrorTypes.NETWORK_ERROR) inst.startLoad();
+        else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) inst.recoverMediaError();
+        else hlsFail();
+      });
+      inst.on(Hls.Events.MANIFEST_PARSED, function () {
+        if (hls !== inst) return;
+        hlsErrs = 0;
+        if ((quals[qi] ? quals[qi].url : '') !== source) { startHls(id); return; }
+        if (wasPlaying) { var p = v.play(); if (p && p.catch) p.catch(function () {}); }
+        info();
+      });
+      inst.attachMedia(v);
+      inst.loadSource(source);
+    }, function () {
+      hlsStarting = false;
+      unmuteFailed = true;
+      if (!isOpen || id !== loadId) return;
+      if ((quals[qi] ? quals[qi].url : '') !== source) { keepPosition(); play(); }
+      flash(I18n.t('player.unmuteFailed'), 4000);
+    });
+  }
+
+  function checkUnmute(id, known) {
+    if (!isVod || unmuteFailed || !w.Unmute || Settings.get('unmute') === 'off') return;
+    if (known === true) { startHls(id); return; }
+    var u = probeUrl();
+    if (!u) return;
+    w.Unmute.detect(u).then(function (on) {
+      if (!on || id !== loadId || !isOpen) return;
+      startHls(id);
+    }, function () {});
+  }
+
   function play() {
     pausedAt = 0;                                       // un flujo nuevo empieza en vivo: no hay pausa que recuperar
+    if (hls || hlsStarting) { startHls(loadId); return; }
     v.src = quals[qi].url;
     var p = v.play();
     if (p && p.catch) p.catch(function () {});
@@ -212,7 +290,9 @@
       var saved = store('tq'); qi = 0;
       for (var i = 0; i < quals.length; i++) if (quals[i].name === saved && !badQ[saved]) qi = i;
       if (fresh && a[1] > 0 && !resumeAt) { resumeAt = a[1]; flash(I18n.t('player.resumed', { t: hms(a[1]) }), 4000); }
+      if (r.subonly) flash(I18n.t('player.subonly'), 5000);
       play();
+      checkUnmute(id, r.muted);
     }).catch(function (e) {
       if (id !== loadId) return;
       say(e.offline ? I18n.t(isVod ? 'player.vodUnavailable' : 'player.offline') : I18n.t('player.error', { msg: e.message }));
@@ -242,7 +322,7 @@
 
   function open(it, cb) {
     item = it; onClose = cb; isOpen = true; retried = false; menu = false; isVod = it.type === 'video';
-    resumeAt = 0;
+    resumeAt = 0; unmuteFailed = false; hlsErrs = 0;
     resetSeek();
     el.hidden = false; qm.hidden = true; st.hidden = true;
     quals = []; qi = 0;
@@ -389,7 +469,7 @@
   });
   v.addEventListener('play', function () { if (isOpen) { resumeLive(); renderState(); showOvl(); } });
   v.addEventListener('error', function () {
-    if (!isOpen || !v.getAttribute('src')) return;
+    if (!isOpen || !v.getAttribute('src') || hls || hlsStarting) return;
     if (!retried) { retried = true; keepPosition(); load(); }   // un reintento con token nuevo, sin perder la posición
     else if (qi > 0 && quals.length) {                          // esa calidad no se puede reproducir: vuelve a Auto
       badQ[quals[qi].name] = true;
@@ -408,7 +488,16 @@
     else { retried = false; load(); startPoints(); startChat(); }
   });
 
-  Settings.onChange(layoutChat);
+  Settings.onChange(function (k) {
+    layoutChat();
+    if (k !== 'unmute' || !isOpen || !isVod) return;
+    if (Settings.get('unmute') === 'off') {
+      if (hls || hlsStarting) { keepPosition(); stopHls(); play(); }
+    } else {
+      unmuteFailed = false;
+      checkUnmute(loadId, false);
+    }
+  });
 
   w.Player = { open: open, key: key, isOpen: function () { return isOpen; }, chatShown: function () { return el.classList.contains('chat'); } };
 })(window);

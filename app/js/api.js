@@ -199,6 +199,57 @@
     });
   }
 
+  function gone() { var e = new Error('offline'); e.offline = true; return e; }
+
+  var CDN_RES = [
+    ['chunked', 'Source'], ['1080p60', '1080p60'], ['720p60', '720p60'],
+    ['480p30', '480p30'], ['360p30', '360p30'], ['160p30', '160p30']
+  ];
+
+  function specialId(u) {
+    var parts = u.pathname.split('/');
+    for (var i = 1; i < parts.length; i++) if (parts[i].indexOf('storyboards') >= 0) return parts[i - 1];
+    return '';
+  }
+
+  function subUrl(host, v, key, id) {
+    var type = String(v.broadcastType || '').toLowerCase();
+    var age = (Date.now() - new Date(v.createdAt || 0).getTime()) / 86400000;
+    var special = specialId(new URL(v.seekPreviewsURL));
+    if (type === 'highlight') return 'https://' + host + '/' + special + '/' + key + '/highlight-' + id + '.m3u8';
+    if (type === 'upload' && age > 7) return 'https://' + host + '/' + encodeURIComponent(v.owner.login) + '/' + id + '/' + special + '/' + key + '/index-dvr.m3u8';
+    return 'https://' + host + '/' + special + '/' + key + '/index-dvr.m3u8';
+  }
+
+  // VODs solo para suscriptores: el token de reproducción no existe o usher responde 403. La API pública
+  // de vídeo da seekPreviewsURL y de ahí se reconstruyen las listas de medios del CDN.
+  function subonly(id) {
+    return query('{video(id:' + JSON.stringify(String(id)) + '){broadcastType createdAt seekPreviewsURL owner{login}}}').then(function (d) {
+      var v = d && d.video, u, jobs = [], muted = false, i;
+      if (!v || !v.seekPreviewsURL || !v.owner) throw gone();
+      try { u = new URL(v.seekPreviewsURL); } catch (e) { throw gone(); }
+      if (!specialId(u)) throw gone();
+      function valid(url) {
+        return text(url).then(function (t) {
+          if (t.indexOf('-muted') >= 0) muted = true;
+          if (t.indexOf('.ts') >= 0 || t.indexOf('.mp4') >= 0) return url;
+          return null;
+        }, function () { return null; });
+      }
+      for (i = 0; i < CDN_RES.length; i++) {
+        jobs.push((function (name, url) {
+          return valid(url).then(function (ok) { return ok ? { name: name, url: ok } : null; });
+        })(CDN_RES[i][1], subUrl(u.host, v, CDN_RES[i][0], id)));
+      }
+      return Promise.all(jobs).then(function (list) {
+        var out = [], k;
+        for (k = 0; k < list.length; k++) if (list[k]) out.push(list[k]);
+        if (!out.length) throw gone();
+        return { master: out[0].url, variants: out.slice(1), subonly: true, muted: muted };
+      });
+    });
+  }
+
   // Parsea el master playlist HLS -> [{name, url}] (de mejor a peor calidad)
   function parseMaster(text) {
     var out = [], name = null, lines = text.split(/\r?\n/);
@@ -223,17 +274,22 @@
       },
       extensions: { persistedQuery: { version: 1, sha256Hash: TOKEN_HASH } }
     }];
-    function gone() { var e = new Error('offline'); e.offline = true; return e; }
     return post(body).then(function (j) {
       var d = (Array.isArray(j) ? j[0] : j).data;
       var t = d && (vod ? d.videoPlaybackAccessToken : d.streamPlaybackAccessToken);
-      if (!t) throw gone();
+      if (!t) {
+        if (vod) return subonly(item.id);
+        throw gone();
+      }
       var master = 'https://usher.ttvnw.net/' + (vod ? 'vod/' + encodeURIComponent(item.id) : 'api/channel/hls/' + encodeURIComponent(item.login)) + '.m3u8' +
         '?player=twitchweb&token=' + encodeURIComponent(t.value) + '&sig=' + t.signature +
         '&allow_audio_only=true&allow_source=true&type=any&fast_bread=true&p=' + Math.floor(Math.random() * 1e6);
       return timeout(fetch(master), 10000).then(function (r) {
-        if (r.status === 404 || r.status === 403) throw gone();
-        return r.text().then(function (txt) { return { master: master, variants: parseMaster(txt) }; });
+        if (r.status === 404 || r.status === 403) {
+          if (vod) return subonly(item.id);
+          throw gone();
+        }
+        return r.text().then(function (txt) { return { master: master, variants: parseMaster(txt), muted: txt.indexOf('-muted') >= 0 }; });
       }, function () {
         // Si el fetch falla (p.ej. CORS) dejamos que el <video> lo intente directamente, solo en Auto.
         return { master: master, variants: [] };

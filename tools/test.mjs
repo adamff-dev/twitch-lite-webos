@@ -84,6 +84,11 @@ function net(o = {}) {
         const from = a ? +a[1] + 1 : m ? +m[1] : 0, items = Array.from({ length: 60 }, (_, i) => from + i);
         return res({ data: { video: { comments: { edges: items.map((s) => ({ cursor: 'c' + s, node: { contentOffsetSeconds: s, commenter: { displayName: 'U' + s }, message: { userColor: s % 2 ? '#FF4500' : null, fragments: [{ text: 'msg ' }, { text: String(s) }] } } })), pageInfo: { hasNextPage: from + 60 < 3000 } } } } });
       }
+      if (q.includes('video(id:') && !q.includes('comments(')) {
+        if (!o.subonly) return res({ data: { video: null } });
+        return res({ data: { video: { broadcastType: 'archive', createdAt: '2026-10-31T10:00:00Z',
+          seekPreviewsURL: 'https://video-weaver.example/v1/playlist/ABC/storyboards/xyz.storyboard', owner: { login: 'chan1' } } } });
+      }
       if (q.includes('searchFor')) return res({ data: { searchFor: { channels: { edges: [
         { item: { login: 'foo', displayName: 'Foo', profileImageURL: 'http://p/foo', stream: null } },
         { item: { login: 'bar', displayName: 'Bar', profileImageURL: 'http://p/bar', stream: { viewersCount: 5 } } },
@@ -227,6 +232,75 @@ function boot(o = {}) {
   const gone = boot({ usher: 404 });
   await assert.rejects(gone.w.Api.playback({ type: 'stream', login: 'x' }), (e) => e.offline === true);
   ok('playback: canal desconectado / VOD no disponible');
+
+  const patched = w.Unmute.patch('#EXTM3U\n#EXT-X-MEDIA:TYPE=VIDEO,GROUP-ID="x",NAME="x"\n#EXTINF:10,\n123-muted.ts\nindex-muted-ABC.m3u8\n');
+  assert.equal(patched.changed, 1);
+  assert.ok(patched.text.indexOf('123.ts') >= 0 && patched.text.indexOf('123-muted.ts') < 0);
+  assert.equal(w.Unmute.mutedUrl('https://cdn/1.ts?x=1'), 'https://cdn/1-muted.ts?x=1');
+  assert.ok(w.Unmute.isMuted('0-muted.ts'));
+  ok('unmute: reescritura de segmentos y no de listas .m3u8');
+
+  function baseOk() {}
+  baseOk.prototype.load = (ctx, cfg, cb) => cb.onSuccess({ data: '#EXTM3U\n#EXTINF:10,\n0-muted.ts\n' }, {}, ctx, {});
+  const LO = w.Unmute.loaders({ DefaultConfig: { loader: baseOk } });
+  let data = '';
+  new LO.pLoader({}).load({ url: 'https://cdn/x.m3u8' }, {}, {
+    onSuccess: (r) => { data = r.data; }, onProgress: () => {}, onError: () => {},
+  });
+  assert.ok(data.indexOf('0.ts') >= 0 && data.indexOf('-muted') < 0);
+
+  function base403() {}
+  base403.prototype.load = (ctx, cfg, cb) => cb.onError({ code: 403 }, ctx, {});
+  const FO = w.Unmute.loaders({ DefaultConfig: { loader: base403 } });
+  let failed = '';
+  new FO.fLoader({}).load({ url: 'https://cdn/0.ts' }, {}, {
+    onSuccess: () => {}, onProgress: () => {},
+    onError: (e, ctx) => { failed = ctx.url; },
+  });
+  assert.match(failed, /0-muted\.ts$/);
+  ok('unmute: cargadores de hls.js (playlist y fallback de segmento)');
+
+  const sub = boot({ subonly: true, usher: 403, media: '#EXTM3U\n#EXTINF:10,\n0-muted.ts\n' });
+  const sr = await sub.w.Api.playback({ type: 'video', id: '777' });
+  assert.equal(sr.subonly, true);
+  assert.equal(sr.muted, true);
+  assert.match(sr.master, /^https:\/\/video-weaver\.example\/ABC\/chunked\/index-dvr\.m3u8$/);
+  assert.deepEqual(J(sr.variants.map((x) => x.name)), ['1080p60', '720p60', '480p30', '360p30', '160p30']);
+  assert.ok(sr.variants.every((x) => /^https:\/\/video-weaver\.example\/ABC\/[^/]+\/index-dvr\.m3u8$/.test(x.url)));
+  ok('playback: VOD solo para suscriptores (CDN desde seekPreviewsURL)');
+
+  const inst = { destroyed: false, loaded: '', attached: false, handlers: {}, config: null,
+    on(e, f) { this.handlers[e] = f; }, attachMedia() { this.attached = true; },
+    loadSource(s) { this.loaded = s; }, destroy() { this.destroyed = true; } };
+  function FakeHls(config) { inst.config = config; return inst; }
+  FakeHls.DefaultConfig = { loader: function () {} };
+  FakeHls.DefaultConfig.loader.prototype.load = function () {};
+  FakeHls.isSupported = () => true;
+  FakeHls.Events = { ERROR: 'error', MANIFEST_PARSED: 'manifest' };
+  FakeHls.ErrorTypes = { NETWORK_ERROR: 'network', MEDIA_ERROR: 'media' };
+  const m = boot({ media: '#EXTM3U\n#EXTINF:10,\n0-muted.ts\n', beforeScripts: (win) => { win.Hls = FakeHls; } });
+  const v = m.$('v');
+  m.w.Player.open({ type: 'video', id: '905', name: 'Chan', title: 'VOD silenciado', duration: 100 }, () => {});
+  await m.until(() => inst.loaded, 'hls.js bajo demanda');
+  assert.ok(inst.attached);
+  assert.match(inst.loaded, /usher\.ttvnw\.net\/vod\/905\.m3u8/);
+  assert.equal(typeof inst.config.pLoader, 'function');
+  assert.equal(typeof inst.config.fLoader, 'function');
+
+  // apagar el ajuste en caliente vuelve al reproductor nativo; encenderlo lo reactiva
+  m.key(m.K.green);
+  m.key(m.K.down); m.key(m.K.down); m.key(m.K.right);
+  assert.equal(m.w.Settings.get('unmute'), 'off');
+  assert.equal(inst.destroyed, true, 'apagar el ajuste destruye hls.js');
+  assert.match(v.getAttribute('src') || '', /usher\.ttvnw\.net\/vod\/905\.m3u8/, 'vuelve al flujo nativo');
+  inst.destroyed = false; inst.loaded = '';
+  m.key(m.K.left);
+  assert.equal(m.w.Settings.get('unmute'), 'on');
+  await m.until(() => inst.loaded, 'hls.js de nuevo al reactivar el audio');
+  m.key(m.K.back);
+  m.key(m.K.back);
+  assert.equal(inst.destroyed, true, 'salir destruye hls.js');
+  ok('VOD silenciado: usa hls.js bajo demanda, respeta el ajuste en caliente y lo destruye al salir');
 
   const s = J(await w.Api.search('fo o'));
   assert.deepEqual(s.items.map((i) => [i.login, i.live, i.type]), [['bar', true, 'channel'], ['foo', false, 'channel']]);
@@ -1276,19 +1350,20 @@ function boot(o = {}) {
   assert.equal($('settings').hidden, false, 'Verde abre los ajustes');
   assert.equal(w.Settings.isOpen(), true);
   assert.equal($('settings').className, '', 'fuera del reproductor el panel va centrado');
-  assert.equal(rows().length, 10, '8 ajustes + créditos + restablecer');
+  assert.equal(rows().length, 11, '9 ajustes + créditos + restablecer');
   assert.match(rows()[0].textContent, /Pestaña al abrir la aplicación.*Inicio/);
   assert.match(rows()[1].textContent, /Contenido de mi país.*Automático/);
-  assert.match(rows()[2].textContent, /Tamaño de la letra del chat.*Normal/);
-  assert.match(rows()[3].textContent, /Ancho del chat.*25%/);
-  assert.match(rows()[4].textContent, /Alto del chat.*100%/);
-  assert.match(rows()[5].textContent, /Posición del chat.*Arriba derecha/);
-  assert.match(rows()[6].textContent, /Opacidad.*90%/);
-  key(K.down); key(K.down); key(K.down); key(K.down); key(K.down);   // las flechas no mueven la cuadrícula de detrás
+  assert.match(rows()[2].textContent, /Restaurar audio silenciado.*Sí/);
+  assert.match(rows()[3].textContent, /Tamaño de la letra del chat.*Normal/);
+  assert.match(rows()[4].textContent, /Ancho del chat.*25%/);
+  assert.match(rows()[5].textContent, /Alto del chat.*100%/);
+  assert.match(rows()[6].textContent, /Posición del chat.*Arriba derecha/);
+  assert.match(rows()[7].textContent, /Opacidad.*90%/);
+  for (let i = 0; i < 6; i++) key(K.down);                    // las flechas no mueven la cuadrícula de detrás
   assert.equal(focused().getAttribute('data-i'), '0');
   key(K.ok);                                                  // OK en la posición: siguiente valor
   assert.equal(w.Settings.get('pos'), 'bl');
-  key(K.up); key(K.up); key(K.up); key(K.up); key(K.up);
+  for (let i = 0; i < 6; i++) key(K.up);
   key(K.ok);                                                  // OK en la pestaña inicial: siguiente valor
   assert.equal(w.Settings.get('tab'), 'games');
   assert.equal(stored().tab, 'games', 'se guarda al momento');
@@ -1299,16 +1374,16 @@ function boot(o = {}) {
 
   // límites con ◀ ▶ (no dan la vuelta) y restablecer
   key(K.green);
-  for (let i = 0; i < 6; i++) key(K.down);                    // opacidad
+  for (let i = 0; i < 7; i++) key(K.down);                    // opacidad
   for (let i = 0; i < 15; i++) key(K.left);
   assert.equal(w.Settings.get('op'), 0, 'la opacidad no baja de 0');
   for (let i = 0; i < 15; i++) key(K.right);
   assert.equal(w.Settings.get('op'), 100);
   key(K.down); key(K.right);                                  // ocultar panel tras
   assert.equal(w.Settings.hideMs(), 6000);
-  key(K.down); key(K.down); assert.match(rows()[9].textContent, /Restablecer/);   // antes pasa por Créditos
+  key(K.down); key(K.down); assert.match(rows()[10].textContent, /Restablecer/);   // antes pasa por Créditos
   key(K.ok);
-  assert.deepEqual(stored(), { tab: 'streams', cfilter: 'auto', fs: 'm', size: 25, height: 100, pos: 'tr', op: 90, hide: 4 }, 'restablecer vuelve a los valores de serie');
+  assert.deepEqual(stored(), { tab: 'streams', cfilter: 'auto', unmute: 'on', fs: 'm', size: 25, height: 100, pos: 'tr', op: 90, hide: 4 }, 'restablecer vuelve a los valores de serie');
   key(K.back);
   assert.equal($('settings').hidden, true, 'Atrás cierra');
   ok('ajustes: límites de ◀ ▶ y restablecer valores por defecto');
@@ -1358,7 +1433,7 @@ function boot(o = {}) {
   assert.equal(w.Player.isOpen(), true, 'Atrás cierra solo los ajustes');
   assert.equal($('settings').hidden, true);
   key(K.green);
-  key(K.down); key(K.down); key(K.down);                      // tamaño (tras pestaña y contenido de mi país)
+  key(K.down); key(K.down); key(K.down); key(K.down);          // tamaño (tras pestaña, contenido y audio)
   key(K.left);
   assert.equal($('chat').style.width, '20vw', 'un paso = 5 %'); assert.equal($('chat').style.height, '100%');
   assert.equal($('ovl').style.right, '20vw');
@@ -1387,7 +1462,7 @@ function boot(o = {}) {
   key(K.back);
   key(K.green);
   assert.equal($('settings').className, 'pl ar', 'con el chat a la izquierda el panel va a la derecha');
-  for (let i = 0; i < 9; i++) key(K.down);                    // restablecer (tras Créditos): el alto vuelve al 100 %
+  for (let i = 0; i < 10; i++) key(K.down);                   // restablecer (tras Créditos): el alto vuelve al 100 %
   key(K.ok);
   assert.equal(w.Settings.get('height'), 100);
   assert.equal($('chat').style.height, '100%', 'restablecer devuelve el alto al 100 %');
@@ -1426,9 +1501,9 @@ function boot(o = {}) {
   const rows = () => [...d.querySelectorAll('#srows .si')];
   await until(() => cards().length === 6, 'inicio (créditos)');
   key(K.green);
-  for (let i = 0; i < 8; i++) key(K.down);                    // las 8 filas de ajustes → Créditos
-  assert.match(rows()[8].textContent, /Créditos/);
-  assert.ok(rows()[8].classList.contains('on'), 'la fila Créditos queda enfocada');
+  for (let i = 0; i < 9; i++) key(K.down);                    // las 9 filas de ajustes → Créditos
+  assert.match(rows()[9].textContent, /Créditos/);
+  assert.ok(rows()[9].classList.contains('on'), 'la fila Créditos queda enfocada');
   key(K.ok);
   assert.equal($('credits').hidden, false, 'OK abre los créditos');
   assert.equal(w.Credits.isOpen(), true);
@@ -1439,7 +1514,7 @@ function boot(o = {}) {
   assert.equal($('cqr').innerHTML, qrHtml(w, w.CONFIG.CREDITS.url));
   key(K.down); key(K.green);                                  // mientras se ven, el mando no llega a los ajustes
   assert.equal($('settings').hidden, false, 'Verde no cierra los ajustes desde los créditos');
-  assert.ok(rows()[8].classList.contains('on'), 'Abajo no movió la selección de Ajustes');
+  assert.ok(rows()[9].classList.contains('on'), 'Abajo no movió la selección de Ajustes');
   key(K.back);
   assert.equal($('credits').hidden, true, 'Atrás cierra los créditos');
   assert.equal($('settings').hidden, false, 'y vuelve a Ajustes');
@@ -1455,7 +1530,7 @@ function boot(o = {}) {
   t2.w.CONFIG.CREDITS.donate = DON;
   await t2.until(() => t2.cards().length === 6, 'inicio (donar)');
   t2.key(t2.K.green);
-  for (let i = 0; i < 8; i++) t2.key(t2.K.down);
+  for (let i = 0; i < 9; i++) t2.key(t2.K.down);
   t2.key(t2.K.ok);
   assert.equal(t2.$('cqrtxt').textContent, 'Escanea para apoyar el proyecto con una donación', 'con donaciones: texto de donar');
   assert.equal(t2.$('cqr').innerHTML, qrHtml(t2.w, DON), 'con donaciones: el QR apunta a la URL de donar');
@@ -1466,8 +1541,8 @@ function boot(o = {}) {
   const en = boot({ lang: 'en' });
   await en.until(() => en.cards().length === 6, 'inicio (créditos en inglés)');
   en.key(en.K.green);
-  for (let i = 0; i < 8; i++) en.key(en.K.down);
-  assert.match(en.d.querySelectorAll('#srows .si')[8].textContent, /Credits/);
+  for (let i = 0; i < 9; i++) en.key(en.K.down);
+  assert.match(en.d.querySelectorAll('#srows .si')[9].textContent, /Credits/);
   en.key(en.K.ok);
   assert.equal(en.$('ctitle').textContent, 'Credits');
   assert.equal(en.$('cmade').textContent, 'Made by adamff-dev');
