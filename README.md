@@ -1,6 +1,6 @@
 # Twitch Lite for webOS
 
-A lightweight Twitch client for LG webOS TVs. No frameworks: a single `index.html` of about 70 KB, native `<video>` for HLS, and a chat built for modest hardware.
+A lightweight Twitch client for LG webOS TVs. No frameworks: a single `index.html` of about 100 KB, native `<video>` for HLS (with an optional on-demand hls.js for muted VODs), and a chat built for modest hardware.
 
 ![Twitch Lite home screen on an LG webOS TV](docs/screenshot-home.png)
 
@@ -35,6 +35,15 @@ Without signing in you can use Home, Categories and Search. Following and Videos
 ## Automatic channel points
 
 While you watch a live stream with an active session, the app checks every 60 seconds for a bonus chest and claims it automatically. A banner appears in the player (`+50 points · 1,234`). To turn this off, set `localStorage.setItem('ptsOff', '1')` in the app's storage.
+
+## Muted VOD segments and sub-only VODs
+
+Two workarounds are included for VODs. They bypass Twitch restrictions, may stop working at any time and may violate Twitch's terms. Use them at your own risk.
+
+- **Muted VOD segments.** When a VOD is detected as muted, the player loads `js/hls.light.min.js` (hls.js 0.14.17, about 170 KB) only for that video and plays it through MSE. The media playlist is rewritten so segment URLs point to the original, unmuted files; if an original is no longer available (403/404), it falls back to the muted segment. If hls.js cannot start, the native player is used and the VOD stays muted. Twitch usually keeps the original segments for about 24 hours, sometimes less. You can turn this off in **Settings > Restore muted audio**.
+- **Sub-only VODs.** If the playback token is missing or usher returns 403, the app reads the public `video` GraphQL data (`broadcastType`, `createdAt`, `seekPreviewsURL`, `owner.login`), rebuilds the CDN media playlists for the qualities that exist and plays the first one. The quality menu still lists the qualities found. This only works while those CDN files are public.
+
+hls.js is shipped separately in `app/js/hls.light.min.js`; the build copies it to `dist/js/` instead of inlining it, so the app still loads a single file at startup and only fetches hls.js when a muted VOD needs it. hls.js is © its authors, licensed under [Apache-2.0](https://github.com/video-dev/hls.js/blob/master/LICENSE).
 
 ## Language
 
@@ -96,6 +105,7 @@ Press **Green** to open the settings. ▲ ▼ move between rows, ◀ ▶ change 
 
 - **Tab on app start**: Home, Categories, Following or Videos.
 - **Content from my country**: *Automatic* (the default: Home and category streams use your system language, see [Language](#language)) or *Everything*. Changing it reloads Home and Categories.
+- **Restore muted audio**: *Yes* (the default) or *No*. See [Muted VOD segments and sub-only VODs](#muted-vod-segments-and-sub-only-vods).
 - **Chat**:
   - text size (4 levels);
   - width (5–100 % of the screen, in steps of 5);
