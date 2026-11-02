@@ -13,7 +13,11 @@
   var hideT = 0, retried = false, loadId = 0, onClose = null, toastT = 0;
   var seekTarget = null, seekFrom = 0, seekStreak = 0, seekLast = 0, seekT = 0;
   var resumeAt = 0;          // posición a recuperar al cambiar de calidad o reintentar un VOD
-  var badQ = {};             // calidades que han fallado en esta sesión (algunos VODs no tienen todas)
+  var pausedAt = 0;          // instante en que se pausó un directo (0 = no hay pausa pendiente de reanudar)
+  var LIVE_SKIP_MS = 2000;   // pausa de un directo más larga que esto: al reanudar se salta al borde en vivo
+  var LIVE_RELOAD_MS = 30000; // pausa tan larga que la lista HLS ya ha caducado: al reanudar se recarga el flujo
+  var ADS_EVERY = 3000;      // ms entre lecturas de la lista de medios para detectar anuncios
+  var badQ = {};           // calidades que han fallado en esta sesión (algunos VODs no tienen todas)
   var STEPS = [10, 10, 30, 30, 60, 60, 120, 120, 300];     // segundos por pulsación según la racha de pulsaciones rápidas
 
   function say(t) { pm.textContent = t || ''; pm.hidden = !t; }
@@ -60,7 +64,7 @@
   // Esquina, tamaño, letra y opacidad del chat según los ajustes; el panel y los avisos se apartan del chat.
   function layoutChat() {
     var c = Settings.chat(), s = $('chat').style, right = c.pos.charAt(1) === 'r', on = el.classList.contains('chat');
-    s.width = c.w + 'vw'; s.height = '100%';
+    s.width = c.w + 'vw'; s.height = c.h + '%';
     s.top = c.pos.charAt(0) === 't' ? '0' : 'auto'; s.bottom = c.pos.charAt(0) === 'b' ? '0' : 'auto';
     s.left = right ? 'auto' : '0'; s.right = right ? '0' : 'auto';
     s.fontSize = c.fs + 'vw';
@@ -70,12 +74,16 @@
     ovl.style.right = on && right ? off + 'vw' : '';
     qm.style.right = toast.style.right = on && right ? (off + 3) + 'vw' : '';
   }
-  function applyChat() { el.classList[Chat.isOn() && isOpen && !isVod ? 'add' : 'remove']('chat'); layoutChat(); }
-  function startChat() { if (isOpen && !isVod && item) Chat.attach(item.login); applyChat(); }
+  function applyChat() { el.classList[Chat.isOn() && isOpen ? 'add' : 'remove']('chat'); layoutChat(); }
+  // Directo: chat en vivo (IRC). VOD: el chat de la emisión original, sincronizado con la posición del vídeo.
+  function attachChat() {
+    if (isVod) Chat.attachVod(item.id, function () { return v.currentTime; });
+    else Chat.attach(item.login);
+  }
+  function startChat() { if (isOpen && item) attachChat(); applyChat(); }
   function toggleChat() {
-    if (isVod) { flash(I18n.t('player.chatLiveOnly')); return; }
     var on = Chat.toggle();
-    if (on) Chat.attach(item.login);
+    if (on) attachChat();
     applyChat();
     flash(I18n.t(on ? 'player.chatOn' : 'player.chatOff'), 1500);
     labels();
@@ -126,7 +134,6 @@
     $('oinfo').textContent = parts.join(' — ');
     bar.hidden = tm.hidden = !isVod;
     $('bback').hidden = $('bfwd').hidden = !isVod;       // saltar: solo VOD
-    $('bchat').hidden = isVod;                            // chat: solo directos
     if (cur.hidden) focusDefault();
     $('ohint').textContent = I18n.t(isVod ? 'player.hintVod' : 'player.hintLive');
     labels();
@@ -143,22 +150,66 @@
     updTime();
   }
 
+  /* ---------- anuncios (directos) ----------
+     Cada pocos segundos se lee la lista de medios y, si el tramo que suena es un anuncio, se silencia el audio
+     hasta que termina (solo silencia: el anuncio se sigue viendo). Ver ads.js. */
+  // Seguros para no dejar el audio mudo por error: tope de AD_MAX_MS seguidos y se suelta tras AD_FAILS lecturas fallidas.
+  var adT = 0, adOn = false, adWasMuted = false, adSince = 0, adFails = 0, adBlock = false;
+  var AD_MAX_MS = 180000, AD_FAILS = 3;
+  function setAd(on) {
+    if (on === adOn) return;
+    adOn = on;
+    if (on) { adWasMuted = v.muted; adSince = Date.now(); v.muted = true; flash(I18n.t('player.adMuted'), 4000); }
+    else v.muted = adWasMuted;
+  }
+  function adUrl() { return qi > 0 ? quals[qi].url : (quals.length > 1 ? quals[1].url : ''); }
+  function adLag() {                                      // segundos que el vídeo va por detrás del borde de la lista
+    try { var r = v.seekable; if (r && r.length) return Math.max(0, r.end(r.length - 1) - v.currentTime); } catch (e) {}
+    return 8;
+  }
+  function adTick() {
+    var u = adUrl(), id = loadId;
+    if (!isOpen || isVod || !u || v.paused) return;
+    Api.text(u).then(function (t) {
+      if (id !== loadId || !isOpen) return;
+      adFails = 0;
+      var ad = Ads.playingAd(t, adLag());
+      if (!ad) adBlock = false;
+      else if (adOn && Date.now() - adSince > AD_MAX_MS) { adBlock = true; ad = false; }   // un anuncio no dura tanto: algo va mal
+      setAd(ad && !adBlock);
+    }, function () {
+      if (id === loadId && ++adFails >= AD_FAILS) setAd(false);                // sin poder leer la lista no se sigue en mudo
+    });
+  }
+  function startAds() { if (!isVod && !adT) adT = setInterval(adTick, ADS_EVERY); }
+  function stopAds() { clearInterval(adT); adT = 0; adFails = 0; adBlock = false; setAd(false); }
+
+  // Posición del VOD: se guarda cada 15 s, al pausar, al salir y al pasar a segundo plano (ver resume.js).
+  function savePos(force) {
+    if (isVod && item && isOpen && v.getAttribute('src') && !resumeAt) Resume.save(item.id, v.currentTime, duration(), force);
+  }
+
   function play() {
+    pausedAt = 0;                                       // un flujo nuevo empieza en vivo: no hay pausa que recuperar
     v.src = quals[qi].url;
     var p = v.play();
     if (p && p.catch) p.catch(function () {});
     info();
+    startAds();
   }
 
   function load() {
     var id = ++loadId;
+    var fresh = isVod && !resumeAt;                     // VOD recién abierto (no un reintento): ¿por dónde iba?
     say(I18n.t('loading'));
     stop();
-    Api.playback(item).then(function (r) {
+    Promise.all([Api.playback(item), fresh ? Resume.get(item.id, item.duration) : 0]).then(function (a) {
       if (id !== loadId) return;
+      var r = a[0];
       quals = [{ name: 'Auto', url: r.master }].concat(r.variants);
       var saved = store('tq'); qi = 0;
       for (var i = 0; i < quals.length; i++) if (quals[i].name === saved && !badQ[saved]) qi = i;
+      if (fresh && a[1] > 0 && !resumeAt) { resumeAt = a[1]; flash(I18n.t('player.resumed', { t: hms(a[1]) }), 4000); }
       play();
     }).catch(function (e) {
       if (id !== loadId) return;
@@ -178,8 +229,9 @@
   function resetSeek() { clearTimeout(seekT); seekTarget = null; seekStreak = 0; }
 
   function close() {
+    savePos(true);
     loadId++; isOpen = false; menu = false; resumeAt = 0; clearTimeout(hideT); clearTimeout(toastT); resetSeek();
-    Points.stop(); Chat.detach(); applyChat();
+    Points.stop(); Chat.detach(); applyChat(); stopAds();
     stop(); say(''); st.hidden = true; toast.hidden = true;
     el.hidden = true; qm.hidden = true; ovl.hidden = true;
     item = null; quals = [];
@@ -222,6 +274,28 @@
 
   function togglePause() {
     if (v.paused) { var p = v.play(); if (p && p.catch) p.catch(function () {}); } else v.pause();
+  }
+
+  // Directos en pausa: el emisor sigue en vivo, así que al reanudar se salta al borde en vivo, no al punto pausado.
+  // Borde según el reproductor (null si no hay rangos seekables utilizables).
+  function liveEdge() {
+    try {
+      var s = v.seekable, n = s ? s.length : 0;
+      var e = n > 0 ? s.end(n - 1) : 0;
+      return e > 0 && isFinite(e) ? e : null;
+    } catch (x) { return null; }
+  }
+  // Llamada desde el evento 'play'. Una sola vez por pausa (pausedAt se borra antes de actuar). El seek no dispara
+  // pause/play; si no hay borde o la pausa fue muy larga, se recarga el flujo (load() pide un token nuevo).
+  function resumeLive() {
+    var gap = pausedAt ? Date.now() - pausedAt : 0;
+    pausedAt = 0;
+    if (!isOpen || isVod || !v.getAttribute('src') || gap < LIVE_SKIP_MS) return;
+    var edge = gap < LIVE_RELOAD_MS ? liveEdge() : null;
+    if (edge !== null) {
+      try { v.currentTime = edge; } catch (e) { edge = null; }
+    }
+    if (edge === null) load();
   }
 
   function openMenu() {
@@ -304,11 +378,14 @@
 
   v.addEventListener('playing', function () { retried = false; say(''); renderState(); });
   v.addEventListener('waiting', function () { if (isOpen) say(I18n.t('loading')); });
-  v.addEventListener('timeupdate', updTime);
+  v.addEventListener('timeupdate', function () { updTime(); savePos(false); });
   v.addEventListener('loadedmetadata', applyResume);
   v.addEventListener('canplay', applyResume);
-  v.addEventListener('pause', function () { if (isOpen && v.getAttribute('src')) { renderState(); showOvl(); } });
-  v.addEventListener('play', function () { if (isOpen) { renderState(); showOvl(); } });
+  // Con src quitado (stop() al cerrar o al pasar a segundo plano) la pausa no cuenta: no es del usuario.
+  v.addEventListener('pause', function () {
+    if (isOpen && v.getAttribute('src')) { if (!isVod && !pausedAt) pausedAt = Date.now(); savePos(true); renderState(); showOvl(); }
+  });
+  v.addEventListener('play', function () { if (isOpen) { resumeLive(); renderState(); showOvl(); } });
   v.addEventListener('error', function () {
     if (!isOpen || !v.getAttribute('src')) return;
     if (!retried) { retried = true; keepPosition(); load(); }   // un reintento con token nuevo, sin perder la posición
@@ -325,7 +402,7 @@
   // Si la app pasa a segundo plano, se libera el decoder y se cierran chat y puntos; al volver se retoma todo.
   document.addEventListener('visibilitychange', function () {
     if (!isOpen) return;
-    if (document.hidden) { keepPosition(); loadId++; stop(); Points.stop(); Chat.detach(); }
+    if (document.hidden) { savePos(true); keepPosition(); loadId++; stop(); Points.stop(); Chat.detach(); stopAds(); }
     else { retried = false; load(); startPoints(); startChat(); }
   });
 

@@ -1,5 +1,5 @@
 /* Ajustes de la aplicación (botón Verde del mando). Se guardan en localStorage y se aplican al momento.
-   ▲ ▼ mueven entre filas · ◀ ▶ cambian el valor · OK pasa al siguiente valor (o restablece) · Atrás o Verde cierran.
+   ▲ ▼ mueven entre filas · ◀ ▶ cambian el valor · OK pasa al siguiente valor (en Créditos abre la pantalla de créditos; en Restablecer restablece) · Atrás o Verde cierran.
    Los demás módulos leen los valores con Settings.get / chat / hideMs y se enteran de los cambios con onChange. */
 (function (w) {
   'use strict';
@@ -11,8 +11,10 @@
   // tr: el texto del valor viene de i18n ('set.<k>.<valor>'); si no, se muestra valor + unit
   var ITEMS = [
     { k: 'tab', def: 'streams', vals: ['streams', 'games', 'following', 'videos'], tr: true },
+    { k: 'cfilter', def: 'auto', vals: ['auto', 'off'], tr: true },     // contenido de mi país (Inicio y categorías)
     { k: 'fs', def: 'm', vals: ['s', 'm', 'l', 'xl'], tr: true },
     { k: 'size', def: 25, vals: range(5, 100, 5), unit: '%' },
+    { k: 'height', def: 100, vals: range(5, 100, 5), unit: '%' },      // alto del chat (% de la pantalla)
     { k: 'pos', def: 'tr', vals: ['tl', 'tr', 'bl', 'br'], tr: true },
     { k: 'op', def: 90, vals: range(0, 100, 10), unit: '%' },
     { k: 'hide', def: 4, vals: [3, 4, 6, 10, 15], unit: ' s' }
@@ -39,7 +41,9 @@
       h += '<div class="si' + (on ? ' on' : '') + '"><span>' + I18n.t('set.' + it.k) + '</span><span class="sv">' +
         (on ? '◀ ' : '') + label(it) + (on ? ' ▶' : '') + '</span></div>';
     }
-    h += '<div class="si rs' + (sel === ITEMS.length ? ' on' : '') + '"><span>' + I18n.t('set.reset') + '</span></div>';
+    // Créditos (abre una pantalla propia) y Restablecer, en las dos últimas filas
+    h += '<div class="si' + (sel === ITEMS.length ? ' on' : '') + '"><span>' + I18n.t('set.credits') + '</span></div>';
+    h += '<div class="si rs' + (sel === ITEMS.length + 1 ? ' on' : '') + '"><span>' + I18n.t('set.reset') + '</span></div>';
     rowsEl.innerHTML = h;
     hintEl.textContent = I18n.t('set.hint');
   }
@@ -70,12 +74,16 @@
 
   function key(k) {
     if (k === 'back' || k === 'green') { close(); return; }
-    var last = ITEMS.length;
+    var last = ITEMS.length + 1;                         // filas: ajustes, Créditos (ITEMS.length) y Restablecer (last)
     if (k === 'up' && sel > 0) sel--;
     else if (k === 'down' && sel < last) sel++;
     else if (k === 'left') step(-1, false);
     else if (k === 'right') step(1, false);
-    else if (k === 'ok') { if (sel === last) reset(); else step(1, true); }
+    else if (k === 'ok') {
+      if (sel === last) reset();
+      else if (sel === last - 1) w.Credits.open();
+      else step(1, true);
+    }
     render();
   }
 
@@ -86,8 +94,8 @@
     open: open, close: close, key: key,
     isOpen: function () { return isOpen; },
     get: function (k) { return vals[k]; },
-    // geometría y aspecto del chat: ancho (% de la pantalla, 5-100), esquina, letra (vw) y opacidad del fondo (0-100)
-    chat: function () { return { w: vals.size, pos: vals.pos, fs: FONTS[vals.fs], op: vals.op }; },
+    // geometría y aspecto del chat: ancho y alto (% de la pantalla, 5-100), esquina, letra (vw) y opacidad del fondo (0-100)
+    chat: function () { return { w: vals.size, h: vals.height, pos: vals.pos, fs: FONTS[vals.fs], op: vals.op }; },
     hideMs: function () { return vals.hide * 1000; },
     // lado libre de la pantalla (donde colocar el panel de ajustes) según la esquina del chat
     freeSide: function () { return vals.pos.charAt(1) === 'r' ? 'l' : 'r'; },

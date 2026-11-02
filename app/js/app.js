@@ -265,6 +265,7 @@
       return;
     }
     e.preventDefault();
+    if (Credits.isOpen()) { Credits.key(k); return; }   // créditos: encima de los ajustes, consume el mando
     if (Settings.isOpen()) { Settings.key(k); return; }
     if (Login.isOpen()) { Login.key(k); return; }
     if (k === 'green') { Settings.open(Player.chatShown() ? Settings.freeSide() : ''); return; }   // ajustes (sobre el reproductor se aparta del chat)
@@ -306,4 +307,13 @@
     if (acct.textContent !== was) { views.following = views.videos = null; }
   });
   switchTab(Settings.get('tab'));                        // pestaña inicial elegida en los ajustes
+
+  // Al cambiar el filtro de país se descartan las vistas cacheadas de Inicio y Categorías, y si estás en una se recarga
+  var cfilter = Settings.get('cfilter');
+  Settings.onChange(function (k) {
+    if ((k !== 'cfilter' && k !== '*') || Settings.get('cfilter') === cfilter) return;
+    cfilter = Settings.get('cfilter');
+    views.streams = views.games = null;
+    if (view && (view.tab === 'streams' || view.tab === 'games')) switchTab(view.tab);
+  });
 })();

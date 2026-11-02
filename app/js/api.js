@@ -51,9 +51,44 @@
     };
   }
 
-  function topStreams(cursor) {
-    return query('{streams(first:' + PAGE + after(cursor) + '){edges{cursor node{' + SF + '}}}}')
+  // Idiomas de emisor que acepta el filtro de Twitch (enum Language, comprobado contra el GQL: HE y ZH-HK dan error).
+  var LANGS = ['AR', 'CS', 'DA', 'DE', 'EL', 'EN', 'ES', 'FI', 'FR', 'HI', 'HU', 'ID', 'IT', 'JA', 'KO', 'MS', 'NL', 'NO', 'PL', 'PT', 'RO', 'RU', 'SV', 'TH', 'TR', 'UK', 'VI', 'ZH'];
+
+  // Código de Twitch a partir de una etiqueta de idioma ('es-ES' -> 'ES', 'pt-BR' -> 'PT'). '' si no es uno soportado.
+  // Función pura: el idioma entra como argumento (no lee navigator).
+  function lang(tag) {
+    var m = /^([a-z]{2})(?:[-_]|$)/i.exec(String(tag || ''));
+    var c = m ? m[1].toUpperCase() : '';
+    return LANGS.indexOf(c) >= 0 ? c : '';
+  }
+
+  // Idioma a filtrar ahora: el de navigator.language, salvo que el ajuste 'cfilter' esté en 'off'. '' = sin filtro.
+  function langFilter() {
+    if (w.Settings && w.Settings.get('cfilter') === 'off') return '';
+    return lang(w.navigator.language || w.navigator.userLanguage || '');
+  }
+
+  // Trozo de la consulta con el filtro de idioma del emisor. Sin código no se envía el argumento.
+  function langOpt(code) { return code ? ',options:{broadcasterLanguages:[' + code + ']}' : ''; }
+
+  function streamsPage(cursor, code) {
+    return query('{streams(first:' + PAGE + langOpt(code) + after(cursor) + '){edges{cursor node{' + SF + '}}}}')
       .then(function (d) { return page(d.streams.edges, mapStream); });
+  }
+
+  // Inicio: directos del idioma del sistema. Si la primera página filtrada sale vacía, se pide sin filtro.
+  // Los cursores de las páginas sin filtro llevan prefijo '#' para seguir sin filtro (no son base64 de Twitch).
+  function topStreams(cursor) {
+    var raw = !!cursor && cursor.charAt(0) === '#', c = raw ? cursor.slice(1) : cursor;
+    var code = raw ? '' : langFilter();
+    return streamsPage(c, code).then(function (p) {
+      if (raw) p.cursor = p.cursor ? '#' + p.cursor : null;     // sigue sin filtro
+      if (!code || c || p.items.length) return p;               // sin filtro, no es la 1.ª página, o hay directos
+      return streamsPage(null, '').then(function (f) {          // la 1.ª página filtrada salió vacía
+        f.cursor = f.cursor ? '#' + f.cursor : null;
+        return f;
+      });
+    });
   }
 
   function topGames(cursor) {
@@ -65,9 +100,24 @@
       });
   }
 
-  function gameStreams(name, cursor) {
-    return query('{game(name:' + JSON.stringify(name) + '){streams(first:' + PAGE + after(cursor) + '){edges{cursor node{' + SF + '}}}}}')
+  function gameStreamsPage(name, cursor, code) {
+    return query('{game(name:' + JSON.stringify(name) + '){streams(first:' + PAGE + langOpt(code) + after(cursor) + '){edges{cursor node{' + SF + '}}}}}')
       .then(function (d) { return page(d.game.streams.edges, mapStream); });
+  }
+
+  // Directos de una categoría, con el mismo esquema que Inicio: si en tu idioma no hay ninguno, se muestran todos
+  // (cursores con prefijo '#' = sin filtro), para no dejar la categoría vacía habiendo gente emitiendo.
+  function gameStreams(name, cursor) {
+    var raw = !!cursor && cursor.charAt(0) === '#', c = raw ? cursor.slice(1) : cursor;
+    var code = raw ? '' : langFilter();
+    return gameStreamsPage(name, c, code).then(function (p) {
+      if (raw) p.cursor = p.cursor ? '#' + p.cursor : null;
+      if (!code || c || p.items.length) return p;
+      return gameStreamsPage(name, null, '').then(function (f) {
+        f.cursor = f.cursor ? '#' + f.cursor : null;
+        return f;
+      });
+    });
   }
 
   // Búsqueda de canales (en directo o no). Si searchFor falla, se prueba el login exacto.
@@ -122,6 +172,33 @@
       });
   }
 
+  // Chat de un VOD: mensajes {t: segundo del vídeo, n: nombre, c: color, m: texto}. Primera página desde un segundo
+  // (offset); las siguientes con el cursor devuelto. Cada página trae ~60 mensajes ordenados por tiempo.
+  function vodComments(id, offset, cursor) {
+    var a = cursor ? 'after:' + JSON.stringify(cursor) : 'contentOffsetSeconds:' + Math.max(0, Math.floor(offset || 0));
+    return query('{video(id:' + JSON.stringify(String(id)) + '){comments(' + a + ',first:100){edges{cursor node{contentOffsetSeconds commenter{displayName} message{userColor fragments{text}}}} pageInfo{hasNextPage}}}}')
+      .then(function (d) {
+        var c = d.video && d.video.comments, e = (c && c.edges) || [];
+        return {
+          items: e.map(function (x) {
+            var n = x.node, f = (n.message && n.message.fragments) || [], s = '';
+            for (var i = 0; i < f.length; i++) s += f[i].text || '';
+            return { t: n.contentOffsetSeconds || 0, n: n.commenter ? n.commenter.displayName : '', c: (n.message && n.message.userColor) || '', m: s };
+          }),
+          cursor: e.length ? e[e.length - 1].cursor : null,
+          hasNext: !!(c && c.pageInfo && c.pageInfo.hasNextPage)
+        };
+      });
+  }
+
+  // Texto de una URL (lista de medios HLS) con tiempo máximo. Rechaza si falla.
+  function text(url) {
+    return timeout(fetch(url), 8000).then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.text();
+    });
+  }
+
   // Parsea el master playlist HLS -> [{name, url}] (de mejor a peor calidad)
   function parseMaster(text) {
     var out = [], name = null, lines = text.split(/\r?\n/);
@@ -164,5 +241,5 @@
     });
   }
 
-  w.Api = { MAX: MAX, timeout: timeout, channelVideos: channelVideos, topStreams: topStreams, topGames: topGames, gameStreams: gameStreams, search: search, playback: playback, parseMaster: parseMaster };
+  w.Api = { MAX: MAX, timeout: timeout, channelVideos: channelVideos, topStreams: topStreams, topGames: topGames, gameStreams: gameStreams, search: search, playback: playback, parseMaster: parseMaster, lang: lang, vodComments: vodComments, text: text };
 })(window);

@@ -3,4 +3,8 @@
    privado (necesario para reclamar puntos automáticamente). Con otro Client ID (p.ej. el de tu propia app
    de dev.twitch.tv, tipo "Público") todo funciona salvo los puntos.
    Se puede sustituir al compilar:  TWITCH_CLIENT_ID=xxxx npm run package */
-window.CONFIG = { CLIENT_ID: 'ue6666qo983tsx6so1t0vnawi233wa' };
+window.CONFIG = {
+  CLIENT_ID: 'ue6666qo983tsx6so1t0vnawi233wa',
+  // Pantalla de créditos (Ajustes > Créditos). donate: URL de donaciones para el QR; si está vacía, el QR apunta al proyecto
+  CREDITS: { author: 'adamff-dev', url: 'https://github.com/adamff-dev/twitch-lite-webos', donate: '' }
+};

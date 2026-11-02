@@ -77,6 +77,13 @@ function net(o = {}) {
         return res([{ data: v.isVod ? { videoPlaybackAccessToken: { value: '{"v":1}', signature: 'sg' } } : { streamPlaybackAccessToken: { value: '{"l":1}', signature: 'sg' } } }]);
       }
       const q = j.query;
+      if (q.includes('viewingHistory')) return res({ data: { video: { self: { viewingHistory: o.vpos ? { position: o.vpos, updatedAt: o.vposAt || '2030-01-01T00:00:00Z' } : null } } } });
+      if (q.includes('comments(')) {
+        // chat de un VOD: un mensaje por segundo (offset = nº de mensaje), 60 por página; el cursor es el offset del último
+        const m = /contentOffsetSeconds:(\d+)/.exec(q), a = /after:"c(\d+)"/.exec(q);
+        const from = a ? +a[1] + 1 : m ? +m[1] : 0, items = Array.from({ length: 60 }, (_, i) => from + i);
+        return res({ data: { video: { comments: { edges: items.map((s) => ({ cursor: 'c' + s, node: { contentOffsetSeconds: s, commenter: { displayName: 'U' + s }, message: { userColor: s % 2 ? '#FF4500' : null, fragments: [{ text: 'msg ' }, { text: String(s) }] } } })), pageInfo: { hasNextPage: from + 60 < 3000 } } } } });
+      }
       if (q.includes('searchFor')) return res({ data: { searchFor: { channels: { edges: [
         { item: { login: 'foo', displayName: 'Foo', profileImageURL: 'http://p/foo', stream: null } },
         { item: { login: 'bar', displayName: 'Bar', profileImageURL: 'http://p/bar', stream: { viewersCount: 5 } } },
@@ -88,12 +95,13 @@ function net(o = {}) {
           videos: { edges: [1, 2].map((i) => ({ cursor: 'v' + i, node: { id: '90' + i, title: 'VOD ' + i, lengthSeconds: 3725, viewCount: 10 * i, createdAt: '2026-10-3' + i + 'T10:00:00Z', previewThumbnailURL: `http://img/v${i}.jpg`, game: { displayName: 'Juego' } } })) } } } });
       }
       if (q.includes('user(login')) return res({ data: { user: { login: 'foo', displayName: 'Foo', profileImageURL: 'http://p/foo', stream: null } } });
-      if (q.includes('game(name')) return res({ data: { game: { streams: { edges: [stream(1), stream(2)] } } } });
+      if (q.includes('game(name')) return res({ data: { game: { streams: { edges: o.emptyLang && q.includes('broadcasterLanguages') ? [] : [stream(1), stream(2)] } } } });
       if (q.includes('games(first')) return res({ data: { games: { edges: [1, 2, 3].map((i) => ({ cursor: 'g' + i, node: { name: 'game' + i, displayName: 'Game ' + i, boxArtURL: 'http://box/' + i, viewersCount: 500 } })) } } });
-      if (q.includes('streams(first')) return res({ data: { streams: { edges: [1, 2, 3, 4, 5, 6].map(stream) } } });
+      if (q.includes('streams(first')) return res({ data: { streams: { edges: o.emptyLang && q.includes('broadcasterLanguages') ? [] : [1, 2, 3, 4, 5, 6].map(stream) } } });
       return res({ errors: [{ message: 'unmocked ' + q }] });
     }
     if (url.startsWith('https://usher.ttvnw.net')) return res(null, o.usher ?? 200, MASTER);
+    if (url.startsWith('https://video-weaver.example')) return res(null, 200, o.media ?? '#EXTM3U\n');   // lista de medios de una calidad
     if (url.endsWith('/oauth2/device')) return res({ device_code: 'dc', user_code: 'ABCD1234', verification_uri: devUri, expires_in: 60, interval: 0.01 });
     if (url.endsWith('/oauth2/token')) {
       const p = Object.fromEntries(body.split('&').map((kv) => kv.split('=').map(decodeURIComponent)));
@@ -136,6 +144,8 @@ function boot(o = {}) {
   Object.defineProperty(P, 'paused', { get() { return this.__p !== false; }, configurable: true });
   Object.defineProperty(P, 'currentTime', { get() { return this.__t || 0; }, set(x) { this.__t = x; this.__seeks = (this.__seeks || 0) + 1; }, configurable: true });
   Object.defineProperty(P, 'duration', { get() { return this.__d ?? NaN; }, configurable: true });
+  // rangos seekables: v.__live = borde en vivo de un directo; sin __live no hay rangos (VOD o directo sin datos)
+  Object.defineProperty(P, 'seekable', { get() { const el = this; return el.__live === undefined ? { length: 0 } : { length: 1, start() { return 0; }, end() { return el.__live; } }; }, configurable: true });
   // los eventos de medios son asíncronos en los navegadores (el handler ve ya el estado final)
   P.pause = function () { this.__p = true; setTimeout(() => this.dispatchEvent(new w.Event('pause')), 0); };
   P.play = function () { this.__p = false; setTimeout(() => this.dispatchEvent(new w.Event('play')), 0); return Promise.resolve(); };
@@ -373,6 +383,81 @@ function boot(o = {}) {
   ok('puntos en el reproductor: aviso "+50 puntos · 1.234" y se detiene al salir');
 }
 
+/* ---------- 3c) contenido de mi país (filtro de idioma del emisor) ---------- */
+{
+  const qs = (t, re) => t.N.calls.filter((c) => c.url.includes('gql') && re.test(String(c.opts.body))).map((c) => JSON.parse(c.opts.body).query);
+  const filt = /broadcasterLanguages:\[ES\]/;
+  // idioma del sistema -> código de Twitch (función pura)
+  const { w: lw } = boot();
+  assert.deepEqual(['es-ES', 'pt-BR', 'EN', 'zh-Hant-TW', 'xx-XX', '', undefined].map((x) => lw.Api.lang(x)), ['ES', 'PT', 'EN', 'ZH', '', '', '']);
+  ok('filtro de país: es-ES → ES, pt-BR → PT y un idioma no soportado → sin filtro');
+
+  // por defecto (es-ES): Inicio y los directos de una categoría se filtran; el listado de categorías no
+  let t = boot();
+  await t.until(() => t.cards().length === 6, 'inicio');
+  let sq = qs(t, /streams\(first/);
+  assert.ok(sq.length >= 1 && sq.every((q) => filt.test(q)), 'Inicio filtra por ES');
+  t.focusTab('games'); t.key(t.K.ok);
+  await t.until(() => t.cards().length === 3, 'categorías');
+  assert.ok(qs(t, /games\(first/).every((q) => !/broadcasterLanguages/.test(q)), 'el listado de categorías no se filtra');
+  t.key(t.K.ok);
+  await t.until(() => t.cards().length === 2, 'directos de la categoría');
+  assert.ok(qs(t, /game\(name/).every((q) => /game\(name:"game1"\)\{streams\(first:24,options:\{broadcasterLanguages:\[ES\]\}/.test(q)), 'la categoría filtra sus directos');
+  ok('filtro de país: Inicio y directos de una categoría filtran por ES; el listado de categorías no');
+
+  // idioma no soportado, o ajuste en "Todo" -> sin filtro
+  t = boot({ lang: 'xx-XX' });
+  await t.until(() => t.cards().length === 6, 'inicio sin filtro');
+  sq = qs(t, /streams\(first/);
+  assert.ok(sq.length >= 1 && sq.every((q) => !/broadcasterLanguages/.test(q)), 'idioma no soportado: sin filtro');
+  t = boot({ ls: { settings: JSON.stringify({ cfilter: 'off' }) } });
+  await t.until(() => t.cards().length === 6, 'inicio con el ajuste en Todo');
+  sq = qs(t, /streams\(first/);
+  assert.ok(sq.length >= 1 && sq.every((q) => !/broadcasterLanguages/.test(q)), 'ajuste Todo: sin filtro');
+  ok('filtro de país: idioma no soportado o ajuste "Todo" → sin filtro');
+
+  // primera página filtrada vacía → segunda petición sin filtro; las páginas siguientes también sin filtro
+  t = boot({ emptyLang: true });
+  await t.until(() => t.cards().length === 6, 'fallback sin filtro');
+  sq = qs(t, /streams\(first/);
+  assert.equal(sq.length, 2, 'una petición filtrada y otra sin filtro');
+  assert.ok(filt.test(sq[0]) && !/broadcasterLanguages/.test(sq[1]));
+  const fb = boot({ emptyLang: true });
+  const p1 = J(await fb.w.Api.topStreams(null));
+  assert.equal(p1.cursor, '#c6', 'el cursor de la página sin filtro lleva prefijo');
+  await fb.w.Api.topStreams(p1.cursor);
+  const next = qs(fb, /after:/);
+  assert.equal(next.length, 1);
+  assert.ok(/after:"c6"/.test(next[0]) && !/broadcasterLanguages/.test(next[0]), 'la página siguiente sigue sin filtro');
+  ok('filtro de país: si no hay directos del idioma, Inicio pide sin filtro (y sigue sin filtro al paginar)');
+
+  // lo mismo dentro de una categoría: nunca vacía habiendo gente emitiendo en otro idioma
+  const gf = boot({ emptyLang: true });
+  const g1 = J(await gf.w.Api.gameStreams('just chatting', null));
+  assert.equal(g1.items.length, 2, 'la categoría muestra directos aunque no haya en tu idioma');
+  const gq = qs(gf, /game\(name/);
+  assert.equal(gq.length, 2, 'una petición filtrada y otra sin filtro');
+  assert.ok(filt.test(gq[0]) && !/broadcasterLanguages/.test(gq[1]));
+  assert.equal(g1.cursor, '#c2', 'cursor sin filtro con prefijo');
+  await gf.w.Api.gameStreams('just chatting', g1.cursor);
+  const gn = qs(gf, /game\(name/).pop();
+  assert.ok(/after:"c2"/.test(gn) && !/broadcasterLanguages/.test(gn), 'la página siguiente sigue sin filtro');
+  ok('filtro de país: una categoría sin directos en tu idioma también muestra todos');
+
+  // cambiar el ajuste con la app abierta recarga Inicio con el nuevo criterio
+  t = boot();
+  await t.until(() => t.cards().length === 6, 'inicio');
+  const n0 = qs(t, /streams\(first/).length;
+  t.key(t.K.green);
+  t.key(t.K.down);                                            // fila 2: contenido de mi país
+  t.key(t.K.right);                                           // Automático → Todo
+  assert.equal(t.w.Settings.get('cfilter'), 'off');
+  await t.until(() => qs(t, /streams\(first/).length > n0 && t.cards().length === 6, 'recarga de Inicio');
+  assert.ok(!/broadcasterLanguages/.test(qs(t, /streams\(first/).pop()), 'Inicio sin filtro tras el cambio');
+  t.key(t.K.green);
+  ok('filtro de país: cambiar el ajuste recarga Inicio');
+}
+
 /* ---------- 4) QR ---------- */
 {
   const { w } = boot();
@@ -463,7 +548,7 @@ function boot(o = {}) {
   assert.match($('v').getAttribute('src'), /AAA|usher\.ttvnw\.net\/vod\/901/);
   assert.equal($('obar').hidden, false, 'un VOD muestra barra de progreso');
   assert.match($('otime').textContent, /0:00 \/ 1:02:05/);
-  assert.deepEqual(t.btnNames(), ['back', 'pause', 'fwd', 'quality', 'close'], 'un VOD: saltos, pausa, calidad y salir');
+  assert.deepEqual(t.btnNames(), ['back', 'pause', 'fwd', 'quality', 'chat', 'close'], 'un VOD: saltos, pausa, calidad, chat y salir');
   key(K.right); key(K.ok);                                   // botón 10 s ▶: no debe romper aunque no haya duración real
   key(K.back); assert.equal(w.Player.isOpen(), false);
   key(K.back);
@@ -514,6 +599,9 @@ function boot(o = {}) {
   key(K.ok);
   await until(() => $('v').getAttribute('src'), 'src del directo');
   const v = $('v');
+  // reloj simulado (el reproductor usa Date.now) para simular pausas largas sin esperar
+  let skew = 0; const realNow = w.Date.now; w.Date.now = () => realNow() + skew;
+  const usher = () => t.N.calls.filter((c) => c.url.startsWith('https://usher.ttvnw.net')).length;
 
   assert.equal(v.paused, false);
   key(K.ok);                                                  // OK = pausa
@@ -552,6 +640,47 @@ function boot(o = {}) {
   assert.equal(v.paused, false);
   await until(() => $('pstate').hidden, 'sin indicador tras el puntero');
 
+  // directo en pausa: al reanudar tras más de 2 s salta al borde en vivo (una sola vez, sin bucles)
+  v.__t = 1000; v.__seeks = 0; v.__live = 5000;
+  key(K.ok); await sleep(20);                                 // pausa (el evento llega en el turno siguiente)
+  skew += 2500; v.__live = 5030;
+  key(K.ok); await sleep(20);                                 // reanudar
+  assert.equal(v.paused, false);
+  assert.equal(v.__t, 5030, 'tras una pausa de 2,5 s salta al borde en vivo');
+  await sleep(150);
+  assert.equal(v.__seeks, 1, 'el salto se aplica una sola vez');
+  assert.equal(v.paused, false);
+  ok('directo: tras una pausa larga, reanudar salta al borde en vivo');
+
+  // una pausa corta (<2 s) continúa donde se paró
+  v.__seeks = 0;
+  key(K.ok); await sleep(20); skew += 500; v.__live = 5100;
+  key(K.ok); await sleep(20);
+  assert.equal(v.__seeks, 0, 'una pausa corta no salta');
+  assert.equal(v.paused, false);
+
+  // directo sin rangos seekables: al reanudar se recarga el flujo (token nuevo)
+  v.__live = undefined;
+  let before = usher();
+  key(K.ok); await sleep(20); skew += 3000;
+  key(K.ok); await sleep(20);
+  await until(() => usher() === before + 1, 'recarga del directo sin rangos');
+  await until(() => v.getAttribute('src'), 'src tras recargar el directo');
+  await sleep(50);
+  assert.equal(usher(), before + 1, 'la recarga ocurre una sola vez');
+  assert.equal(v.paused, false);
+  ok('directo: sin rangos seekables, reanudar recarga el flujo una sola vez');
+
+  // pausa muy larga (lista HLS caducada): se recarga aunque haya borde en vivo
+  v.__live = 6000; v.__t = 0; v.__seeks = 0; before = usher();
+  key(K.ok); await sleep(20); skew += 40000;
+  key(K.ok); await sleep(20);
+  await until(() => usher() === before + 1, 'recarga tras una pausa muy larga');
+  await sleep(50);
+  assert.equal(v.__seeks, 0, 'tras una pausa muy larga recarga en lugar de saltar');
+  v.__live = undefined;
+  ok('directo: tras una pausa muy larga (30 s o más) se recarga el flujo');
+
   // calidad: botón del panel
   t.goBtn('quality'); key(K.ok);
   assert.equal($('qmenu').hidden, false);
@@ -586,6 +715,15 @@ function boot(o = {}) {
   // VOD: saltos acelerados
   w.Player.open({ type: 'video', id: '901', name: 'Chan1', title: 'VOD', date: '', game: '', duration: 3725 }, () => {});
   await until(() => v.getAttribute('src'), 'src del VOD');
+  // un VOD no salta al reanudar tras una pausa larga, aunque el vídeo tuviera rangos seekables
+  v.__t = 100; v.__live = 9999; v.__seeks = 0;
+  key(K.ok); await sleep(20); skew += 5000;
+  key(K.ok); await sleep(20);
+  assert.equal(v.paused, false);
+  assert.equal(v.__t, 100, 'en un VOD reanudar no salta');
+  assert.equal(v.__seeks, 0);
+  v.__live = undefined;
+  ok('VOD: reanudar tras una pausa larga no salta');
   v.__d = 3725; v.__t = 100; v.__seeks = 0;
   key(K.right); key(K.left);                                  // en los botones las flechas no saltan
   await sleep(600);
@@ -689,10 +827,172 @@ function boot(o = {}) {
   ok('VOD: una calidad que falla vuelve a Auto sin perder la posición y no se vuelve a elegir');
   w.localStorage.removeItem('tq');
 
-  assert.equal($('bchat').hidden, true, 'un VOD no tiene botón de chat');
-  assert.equal(t.sockets.length, 1, 'un VOD no abre chat');
+  // chat de un VOD: la repetición, sincronizada con la posición del vídeo (sin WebSocket)
+  const gqlComments = () => t.N.calls.filter((c) => c.url.includes('gql') && /comments\(/.test(String(c.opts.body))).map((c) => String(JSON.parse(c.opts.body).query));
+  const lastMsg = () => $('cmsgs').lastChild && $('cmsgs').lastChild.lastChild.textContent;
+  assert.equal($('bchat').hidden, false, 'un VOD también tiene botón de chat');
+  assert.equal(w.Chat.isOn(), false);
+  assert.equal(gqlComments().length, 0, 'con el chat apagado no se piden comentarios');
+  v.__d = 5000; v.__t = 100; v.__live = undefined;
+  t.goBtn('chat'); key(K.ok);
+  assert.equal(w.Chat.isOn(), true);
+  assert.ok($('player').classList.contains('chat'));
+  await until(() => lastMsg() === 'msg 100', 'mensajes del chat del VOD hasta la posición 100');
+  assert.match(gqlComments()[0], /contentOffsetSeconds:90,/, 'empieza 10 s antes de la posición');
+  assert.equal($('cmsgs').lastChild.firstChild.textContent, 'U100:');
+  assert.ok($('cmsgs').children.length <= 8, 'tras el arranque solo se pintan los más recientes');
+  assert.equal(t.sockets.length, 1, 'un VOD no abre WebSocket');
+  await sleep(600);
+  assert.equal(lastMsg(), 'msg 100', 'sin avanzar el vídeo no salen mensajes nuevos (ni del futuro)');
+  v.__t = 103;
+  await until(() => lastMsg() === 'msg 103', 'mensajes al avanzar el vídeo');
+  assert.equal($('cmsgs').lastChild.firstChild.style.color, 'rgb(255, 69, 0)', 'color del usuario');
+  ok('VOD: chat de la repetición sincronizado con la posición (nada del futuro, sin WebSocket)');
+
+  v.__t = 1000;                                               // salto: se vacía y se pide desde la nueva posición
+  await until(() => lastMsg() === 'msg 1000', 'chat tras un salto');
+  assert.ok(gqlComments().some((q) => /contentOffsetSeconds:990,/.test(q)));
+  assert.ok(![...$('cmsgs').children].some((n) => /^msg (1\d\d|\d\d)$/.test(n.lastChild.textContent)), 'lo anterior al salto desaparece');
+  for (const s of [1006, 1012, 1018, 1024]) { v.__t = s; await sleep(300); }
+  await until(() => gqlComments().some((q) => /after:"c1049"/.test(q)), 'página siguiente con el cursor');
+  v.__t = 500;                                                // retroceder también es un salto
+  await until(() => lastMsg() === 'msg 500', 'chat tras retroceder');
+  ok('VOD: saltar o retroceder reinicia el chat y se pide la página siguiente con el cursor');
+
+  t.goBtn('chat'); key(K.ok);
+  assert.equal(w.Chat.isOn(), false);
+  assert.equal($('chat').hidden, true);
+  const nq = gqlComments().length;
+  v.__t = 505; await sleep(400);
+  assert.equal(gqlComments().length, nq, 'con el chat apagado deja de pedir comentarios');
   key(K.back);
-  ok('VOD: no hay chat');
+  ok('VOD: apagar el chat o salir detiene las peticiones');
+}
+
+/* ---------- 6b) anuncios en directos ---------- */
+{
+  const { w } = boot();
+  const base = Date.parse('2026-11-02T17:00:00.000Z');
+  const iso = (ms) => new Date(ms).toISOString();
+  const seg = (i, title = 'live') => `#EXT-X-PROGRAM-DATE-TIME:${iso(base + i * 2000)}\n#EXTINF:2.000,${title}\nhttps://seg/${i}.ts`;
+  const list = (titles = []) => '#EXTM3U\n#EXT-X-TARGETDURATION:2\n' + [0, 1, 2, 3, 4].map((i) => seg(i, titles[i])).join('\n');
+  const dr = `#EXT-X-DATERANGE:ID="stitched-ad-1",CLASS="twitch-stitched-ad",START-DATE="${iso(base + 4000)}",DURATION=4.000\n`;
+  // el borde en vivo de la lista es base+10 s; el anuncio ocupa de base+4 s a base+8 s
+  assert.equal(w.Ads.playingAd(list(), 4), false, 'sin anuncio');
+  assert.equal(w.Ads.playingAd(dr + list(), 4), true, 'DATERANGE stitched-ad: suena el tramo del anuncio');
+  assert.equal(w.Ads.playingAd(dr + list(), 0), false, 'ya en el borde (después del anuncio)');
+  assert.equal(w.Ads.playingAd(dr + list(), 7), false, 'aún antes del anuncio');
+  assert.equal(w.Ads.playingAd(list([, , , 'Amazon', 'Amazon']), 3), true, 'segmentos con título de anunciante');
+  assert.equal(w.Ads.playingAd('#EXTM3U\n#EXTINF:2.000,live\nhttps://seg/0.ts', 0), false, 'sin fechas no se puede saber');
+  ok('anuncios: detección por DATERANGE stitched-ad y por título de segmento, según el retraso del reproductor');
+
+  // en el reproductor: silencia mientras dura el anuncio y deja el audio como estaba al acabar
+  const t = boot();
+  let media = list();
+  const f = t.w.fetch;
+  t.w.fetch = (u, ...r) => String(u).includes('video-weaver') ? Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve(media) }) : f(u, ...r);
+  await t.until(() => t.cards().length === 6, 'inicio');
+  t.key(t.K.ok);
+  const v = t.$('v');
+  await t.until(() => v.getAttribute('src'), 'src del directo');
+  v.muted = false; v.__live = 100; v.__t = 96;                 // el vídeo va 4 s por detrás del borde
+  assert.equal(v.muted, false);
+  media = dr + list();
+  await t.until(() => v.muted, 'audio silenciado durante el anuncio', 4500);
+  assert.match(t.$('ptoast').textContent, /Anuncio/);
+  media = list();
+  await t.until(() => !v.muted, 'audio recuperado al acabar el anuncio', 4500);
+  media = dr + list();
+  await t.until(() => v.muted, 'segundo anuncio', 4500);
+  t.key(t.K.back);
+  assert.equal(v.muted, false, 'al salir el audio no se queda silenciado');
+  ok('anuncios: el reproductor silencia el audio durante el anuncio y lo restaura al acabar o al salir');
+}
+
+/* ---------- 6c) reanudar VODs ---------- */
+{
+  const TV = 'ue6666qo983tsx6so1t0vnawi233wa';
+  const session = { tauth: JSON.stringify({ access: 'acc1', refresh: 'r', userId: '42', login: 'demo_user', cid: TV }) };
+  const vod = (id, d = 5000) => ({ type: 'video', id, name: 'Chan1', title: 'VOD ' + id, date: '', game: '', duration: d });
+  const reopen = async (t, id, d) => {
+    t.w.Player.open(vod(id, d), () => {});
+    await t.until(() => t.$('v').getAttribute('src'), 'src del VOD ' + id);
+    const v = t.$('v'); v.__t = 0; v.__seeks = 0;
+    v.dispatchEvent(new t.w.Event('loadedmetadata'));
+    return v;
+  };
+
+  // solo en local: se guarda al salir y se retoma
+  let t = boot();
+  let v = await reopen(t, '950');
+  assert.equal(v.__seeks, 0, 'un VOD nuevo empieza en 0');
+  v.__d = 5000; v.__t = 300;
+  t.key(t.K.back);
+  assert.equal(t.w.Resume._local('950').pos, 300, 'al salir se guarda la posición');
+  v = await reopen(t, '950');
+  assert.equal(v.__t, 300, 'se reanuda donde se dejó');
+  assert.match(t.$('ptoast').textContent, /Continúas por 5:00/);
+  v.__t = 4990;                                              // casi al final: ya está visto
+  t.key(t.K.back);
+  assert.equal(t.w.Resume._local('950').pos, 0, 'un VOD visto hasta el final se anota como terminado (posición 0)');
+  v = await reopen(t, '950');
+  assert.equal(v.__seeks, 0, 'y vuelve a empezar desde 0');
+  v.__t = 5; t.key(t.K.back);
+  assert.equal(t.w.Resume._local('950').pos, 0, 'menos de 15 s no se guarda (sigue como terminado)');
+  ok('reanudar VOD (local): se guarda al salir, se retoma, y se olvida al terminarlo o con menos de 15 s');
+
+  // se guarda también durante la reproducción (cada 15 s) y al pausar
+  v = await reopen(t, '951');
+  v.__t = 700; v.dispatchEvent(new t.w.Event('timeupdate'));
+  assert.equal(t.w.Resume._local('951').pos, 700, 'timeupdate guarda');
+  v.__t = 800; v.dispatchEvent(new t.w.Event('timeupdate'));
+  assert.equal(t.w.Resume._local('951').pos, 700, 'pero no más de una vez cada 15 s');
+  v.__t = 900; v.pause();
+  await sleep(20);
+  assert.equal(t.w.Resume._local('951').pos, 900, 'al pausar se guarda enseguida');
+  t.key(t.K.back);
+  ok('reanudar VOD: se guarda cada 15 s y al pausar');
+
+  // directos: no se guarda nada
+  t.w.Player.open({ type: 'stream', login: 'chan1', name: 'Chan1', title: '', game: '', viewers: 1 }, () => {});
+  await t.until(() => t.$('v').getAttribute('src'), 'src del directo');
+  t.$('v').__t = 500; t.key(t.K.back);
+  assert.equal(t.w.Resume._local('chan1'), null);
+
+  // posición de Twitch (otro dispositivo): se lee con la sesión del cliente de TV y gana la más reciente
+  t = boot({ ls: session, vpos: 600 });
+  v = await reopen(t, '960');
+  assert.equal(v.__t, 600, 'sin posición local se usa la de Twitch');
+  assert.ok(t.N.calls.some((c) => c.url.includes('gql') && /viewingHistory/.test(String(c.opts.body))));
+  const hdr = t.N.calls.find((c) => /viewingHistory/.test(String(c.opts.body))).opts.headers;
+  assert.equal(hdr.Authorization, 'OAuth acc1');
+  assert.equal(hdr['Client-Id'], TV);
+  t.key(t.K.back);
+
+  t = boot({ ls: { ...session, vpos: JSON.stringify({ 961: [200, Date.now()] }) }, vpos: 600, vposAt: '2020-01-01T00:00:00Z' });
+  v = await reopen(t, '961');
+  assert.equal(v.__t, 200, 'la posición local más reciente gana a la de Twitch');
+  t.key(t.K.back);
+
+  t = boot({ vpos: 600 });                                    // sin sesión no se consulta a Twitch
+  v = await reopen(t, '962');
+  assert.equal(v.__seeks, 0);
+  assert.ok(!t.N.calls.some((c) => /viewingHistory/.test(String(c.opts.body || ''))), 'sin sesión no hay petición');
+  t.key(t.K.back);
+  t = boot({ clientId: 'otro', ls: { tauth: JSON.stringify({ access: 'acc1', refresh: 'r', userId: '42', login: 'demo_user', cid: 'otro' }) }, vpos: 600 });
+  v = await reopen(t, '963');
+  assert.equal(v.__seeks, 0, 'con otro Client ID el GraphQL privado no se usa');
+  t.key(t.K.back);
+
+  // terminar un VOD en la TV: una posición antigua de Twitch no debe volver a reanudarlo
+  t = boot({ ls: session, vpos: 600, vposAt: '2020-01-01T00:00:00Z' });
+  v = await reopen(t, '964');
+  assert.equal(v.__t, 600, 'primero reanuda por la posición de Twitch');
+  v.__d = 5000; v.__t = 4990; t.key(t.K.back);
+  v = await reopen(t, '964');
+  assert.equal(v.__seeks, 0, 'tras terminarlo en la TV no reanuda por la posición antigua de Twitch');
+  t.key(t.K.back);
+  ok('reanudar VOD (Twitch): lee la posición con el cliente de TV, gana la más reciente y no se usa sin sesión');
 }
 
 /* ---------- 7) chat optimizado ---------- */
@@ -966,16 +1266,19 @@ function boot(o = {}) {
   assert.equal($('settings').hidden, false, 'Verde abre los ajustes');
   assert.equal(w.Settings.isOpen(), true);
   assert.equal($('settings').className, '', 'fuera del reproductor el panel va centrado');
-  assert.equal(rows().length, 7, '6 ajustes + restablecer');
+  assert.equal(rows().length, 10, '8 ajustes + créditos + restablecer');
   assert.match(rows()[0].textContent, /Pestaña al abrir la aplicación.*Inicio/);
-  assert.match(rows()[1].textContent, /Tamaño de la letra del chat.*Normal/);
-  assert.match(rows()[3].textContent, /Posición del chat.*Arriba derecha/);
-  assert.match(rows()[4].textContent, /Opacidad.*90%/);
-  key(K.down); key(K.down); key(K.down);                      // las flechas no mueven la cuadrícula de detrás
+  assert.match(rows()[1].textContent, /Contenido de mi país.*Automático/);
+  assert.match(rows()[2].textContent, /Tamaño de la letra del chat.*Normal/);
+  assert.match(rows()[3].textContent, /Ancho del chat.*25%/);
+  assert.match(rows()[4].textContent, /Alto del chat.*100%/);
+  assert.match(rows()[5].textContent, /Posición del chat.*Arriba derecha/);
+  assert.match(rows()[6].textContent, /Opacidad.*90%/);
+  key(K.down); key(K.down); key(K.down); key(K.down); key(K.down);   // las flechas no mueven la cuadrícula de detrás
   assert.equal(focused().getAttribute('data-i'), '0');
   key(K.ok);                                                  // OK en la posición: siguiente valor
   assert.equal(w.Settings.get('pos'), 'bl');
-  key(K.up); key(K.up); key(K.up);
+  key(K.up); key(K.up); key(K.up); key(K.up); key(K.up);
   key(K.ok);                                                  // OK en la pestaña inicial: siguiente valor
   assert.equal(w.Settings.get('tab'), 'games');
   assert.equal(stored().tab, 'games', 'se guarda al momento');
@@ -986,16 +1289,16 @@ function boot(o = {}) {
 
   // límites con ◀ ▶ (no dan la vuelta) y restablecer
   key(K.green);
-  for (let i = 0; i < 4; i++) key(K.down);                    // opacidad
+  for (let i = 0; i < 6; i++) key(K.down);                    // opacidad
   for (let i = 0; i < 15; i++) key(K.left);
   assert.equal(w.Settings.get('op'), 0, 'la opacidad no baja de 0');
   for (let i = 0; i < 15; i++) key(K.right);
   assert.equal(w.Settings.get('op'), 100);
   key(K.down); key(K.right);                                  // ocultar panel tras
   assert.equal(w.Settings.hideMs(), 6000);
-  key(K.down); assert.match(rows()[6].textContent, /Restablecer/);
+  key(K.down); key(K.down); assert.match(rows()[9].textContent, /Restablecer/);   // antes pasa por Créditos
   key(K.ok);
-  assert.deepEqual(stored(), { tab: 'streams', fs: 'm', size: 25, pos: 'tr', op: 90, hide: 4 }, 'restablecer vuelve a los valores de serie');
+  assert.deepEqual(stored(), { tab: 'streams', cfilter: 'auto', fs: 'm', size: 25, height: 100, pos: 'tr', op: 90, hide: 4 }, 'restablecer vuelve a los valores de serie');
   key(K.back);
   assert.equal($('settings').hidden, true, 'Atrás cierra');
   ok('ajustes: límites de ◀ ▶ y restablecer valores por defecto');
@@ -1045,7 +1348,7 @@ function boot(o = {}) {
   assert.equal(w.Player.isOpen(), true, 'Atrás cierra solo los ajustes');
   assert.equal($('settings').hidden, true);
   key(K.green);
-  key(K.down); key(K.down);                                   // tamaño
+  key(K.down); key(K.down); key(K.down);                      // tamaño (tras pestaña y contenido de mi país)
   key(K.left);
   assert.equal($('chat').style.width, '20vw', 'un paso = 5 %'); assert.equal($('chat').style.height, '100%');
   assert.equal($('ovl').style.right, '20vw');
@@ -1059,7 +1362,10 @@ function boot(o = {}) {
   assert.equal($('chat').style.width, '25vw');
   key(K.up); key(K.left);                                     // letra pequeña
   assert.equal($('chat').style.fontSize, '1.15vw');
-  key(K.down); key(K.down); key(K.right); key(K.right);       // posición: abajo derecha
+  key(K.down); key(K.down); key(K.left);                      // alto: 100 → 95
+  assert.equal($('chat').style.height, '95%', 'el alto del chat se aplica');
+  assert.equal($('chat').style.width, '25vw', 'el alto no toca el ancho');
+  key(K.down); key(K.right); key(K.right);                    // posición: abajo derecha
   assert.equal($('chat').style.bottom, '0px'); assert.equal($('chat').style.top, 'auto');
   assert.equal($('chat').style.right, '0px');
   for (let i = 0; i < 3; i++) key(K.left);                    // arriba izquierda
@@ -1071,6 +1377,10 @@ function boot(o = {}) {
   key(K.back);
   key(K.green);
   assert.equal($('settings').className, 'pl ar', 'con el chat a la izquierda el panel va a la derecha');
+  for (let i = 0; i < 9; i++) key(K.down);                    // restablecer (tras Créditos): el alto vuelve al 100 %
+  key(K.ok);
+  assert.equal(w.Settings.get('height'), 100);
+  assert.equal($('chat').style.height, '100%', 'restablecer devuelve el alto al 100 %');
   key(K.back);
 
   // el chat apagado: el panel se queda centrado y el panel no deja huecos
@@ -1095,6 +1405,65 @@ function boot(o = {}) {
   assert.match(t.$('shint').textContent, /Back or Green close/);
   t.key(t.K.back);
   ok('ajustes: textos en inglés');
+}
+
+/* ---------- 11) créditos (Ajustes > Créditos) ---------- */
+{
+  const qrHtml = (w, text) => { const tmp = w.document.createElement('div'); tmp.innerHTML = w.QR.svg(text); return tmp.innerHTML; };
+  // sin URL de donaciones: el QR y su texto apuntan al proyecto
+  const t = boot();
+  const { d, $, key, K, until, cards, w } = t;
+  const rows = () => [...d.querySelectorAll('#srows .si')];
+  await until(() => cards().length === 6, 'inicio (créditos)');
+  key(K.green);
+  for (let i = 0; i < 8; i++) key(K.down);                    // las 8 filas de ajustes → Créditos
+  assert.match(rows()[8].textContent, /Créditos/);
+  assert.ok(rows()[8].classList.contains('on'), 'la fila Créditos queda enfocada');
+  key(K.ok);
+  assert.equal($('credits').hidden, false, 'OK abre los créditos');
+  assert.equal(w.Credits.isOpen(), true);
+  assert.equal($('settings').hidden, false, 'los ajustes siguen debajo');
+  assert.match($('cmade').textContent, /Hecho por adamff-dev/);
+  assert.equal($('curl').textContent, w.CONFIG.CREDITS.url);
+  assert.equal($('cqrtxt').textContent, 'Escanea para ver el proyecto', 'sin donaciones el QR apunta al proyecto');
+  assert.equal($('cqr').innerHTML, qrHtml(w, w.CONFIG.CREDITS.url));
+  key(K.down); key(K.green);                                  // mientras se ven, el mando no llega a los ajustes
+  assert.equal($('settings').hidden, false, 'Verde no cierra los ajustes desde los créditos');
+  assert.ok(rows()[8].classList.contains('on'), 'Abajo no movió la selección de Ajustes');
+  key(K.back);
+  assert.equal($('credits').hidden, true, 'Atrás cierra los créditos');
+  assert.equal($('settings').hidden, false, 'y vuelve a Ajustes');
+  key(K.ok); assert.equal($('credits').hidden, false, 'OK vuelve a abrirlos');
+  key(K.ok); assert.equal($('credits').hidden, true, 'OK también cierra');
+  key(K.back);
+  assert.equal($('settings').hidden, true, 'Atrás cierra los ajustes');
+  ok('créditos: se abren desde Ajustes con autor y QR del proyecto; Atrás vuelve a Ajustes');
+
+  // con URL de donaciones, el QR y el texto apuntan a donar
+  const DON = 'https://donate.example/cafe';
+  const t2 = boot();
+  t2.w.CONFIG.CREDITS.donate = DON;
+  await t2.until(() => t2.cards().length === 6, 'inicio (donar)');
+  t2.key(t2.K.green);
+  for (let i = 0; i < 8; i++) t2.key(t2.K.down);
+  t2.key(t2.K.ok);
+  assert.equal(t2.$('cqrtxt').textContent, 'Escanea para apoyar el proyecto con una donación', 'con donaciones: texto de donar');
+  assert.equal(t2.$('cqr').innerHTML, qrHtml(t2.w, DON), 'con donaciones: el QR apunta a la URL de donar');
+  assert.equal(t2.$('curl').textContent, t2.w.CONFIG.CREDITS.url, 'la URL del proyecto sigue en texto');
+  ok('créditos: con donate configurado el QR apunta a la donación');
+
+  // inglés
+  const en = boot({ lang: 'en' });
+  await en.until(() => en.cards().length === 6, 'inicio (créditos en inglés)');
+  en.key(en.K.green);
+  for (let i = 0; i < 8; i++) en.key(en.K.down);
+  assert.match(en.d.querySelectorAll('#srows .si')[8].textContent, /Credits/);
+  en.key(en.K.ok);
+  assert.equal(en.$('ctitle').textContent, 'Credits');
+  assert.equal(en.$('cmade').textContent, 'Made by adamff-dev');
+  assert.equal(en.$('cwarn').textContent, 'Unofficial project, not related to Twitch');
+  en.key(en.K.back);
+  ok('créditos: textos en inglés');
 }
 
 console.log('\nOK');

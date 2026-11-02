@@ -40,14 +40,16 @@ While you watch a live stream with an active session, the app checks every 60 se
 
 The interface is available in **English** and **Spanish**. It follows the TV's system language (Spanish if it starts with `es`, English otherwise). There is no language switch: if you change the TV language while the app is open, the interface updates by itself.
 
+**Content from your country.** Home, and the live streams of a category, show channels that broadcast in your system language (for example Spanish for `es-ES`, Portuguese for `pt-BR`). It uses Twitch's broadcaster-language filter, which works on the language the streamer sets, not on their country. If nobody is live in that language, Home shows everything. The category list is not filtered, because Twitch does not offer that filter for categories. Languages Twitch has no filter for (for example Hebrew) show everything. To turn the filter off, see **Settings > Content from my country > Everything**.
+
 Translations live in `app/js/i18n.js`. To add a language, copy the `en` block and translate it.
 
 ## Screens
 
 | Tab | Content |
 |---|---|
-| Home | Most-watched live streams |
-| Categories | Categories, then their live streams |
+| Home | Most-watched live streams in your language (see [Content from your country](#language)) |
+| Categories | Categories, then their live streams (filtered by your language) |
 | Following | Live streams from the channels you follow (requires sign-in) |
 | Videos | Your followed channels, then their past broadcasts (VODs). A channel that is live appears first |
 | Search | Channels (live ones first), then their videos |
@@ -70,7 +72,7 @@ Translations live in `app/js/i18n.js`. To add a language, copy the `en` block an
 **Player**
 
 All controls are buttons in the bottom panel. The panel hides itself after a few seconds (4 s by default) and stays visible while paused.
-The buttons are **◀ 10 s · Pause/Play · 10 s ▶** (VOD only), **Quality**, **Chat** (live only) and **Exit**.
+The buttons are **◀ 10 s · Pause/Play · 10 s ▶** (VOD only), **Quality**, **Chat** and **Exit**.
 
 | Key | Action |
 |---|---|
@@ -82,21 +84,31 @@ The buttons are **◀ 10 s · Pause/Play · 10 s ▶** (VOD only), **Quality**, 
 | Play / Pause / Stop / ⏪ ⏩ | Media keys keep working (⏪ ⏩ skip at least 30 s) |
 
 The Magic Remote pointer works too: moving it shows the panel, and you can click buttons and qualities.
+On a live stream, resuming after a pause of more than 2 s jumps to the live edge (after 30 s or more the stream is reloaded). 
+
+**Resuming VODs.** A VOD continues where you left it (not if you finished it or watched under 15 s). The position is stored on the TV; when you are signed in with the default Twitch TV client it is also read from Twitch (`video.self.viewingHistory`), so a VOD you left on your phone or PC resumes on the TV, and the most recent position wins. Twitch exposes no public operation to *write* that position, so what you watch on the TV stays on the TV.
+
+**Ads.** During an ad on a live stream (detected from the HLS playlist: `stitched-ad` date ranges or ad-titled segments) the audio is muted and restored when the ad ends. The ad itself still plays: nothing is skipped or blocked.
 
 ## Settings
 
 Press **Green** to open the settings. ▲ ▼ move between rows, ◀ ▶ change the value, OK goes to the next value, and Back or Green closes it. Changes apply immediately and are saved on the TV:
 
 - **Tab on app start**: Home, Categories, Following or Videos.
+- **Content from my country**: *Automatic* (the default: Home and category streams use your system language, see [Language](#language)) or *Everything*. Changing it reloads Home and Categories.
 - **Chat**:
   - text size (4 levels);
   - width (5–100 % of the screen, in steps of 5);
+  - height (5–100 % of the screen, in steps of 5; 100 % by default). The chat stays anchored to the top or bottom edge, depending on the position;
   - position (top or bottom, left or right);
   - background opacity (0–100 %; the text has a shadow so it stays readable on a transparent background).
 - **Hide the player panel after**: 3, 4, 6, 10 or 15 s.
+- **Credits**: the author, the project link and a QR code for donations. OK opens the screen and OK or Back returns to the settings. The donation link is `CONFIG.CREDITS.donate` in `app/js/config.js`; while it is empty, the QR points to the project page.
 - **Restore default values**.
 
 ## Chat (read-only)
+
+On a **live stream** it shows the live chat. On a **VOD** it shows the replay of the original chat, synchronized with the video: messages appear when the video reaches their second, and a seek (forward, backward or a quality change) reloads the chat from the new position. Nothing appears while paused.
 
 Turn it on with Down during a live stream. The preference is remembered. It is designed for modest TVs:
 
@@ -124,8 +136,11 @@ The app targets webOS 4 and later (Chromium 53), so the code avoids `async/await
 - `app/js/auth.js`: Device Code Grant, token refresh, Helix (followed channels)
 - `app/js/points.js`: automatic channel points claim (private GraphQL, needs the TV client)
 - `app/js/qr.js`: our own QR generator (checked with OpenCV, see `tools/qr-check`)
-- `app/js/chat.js`: optimized read-only IRC chat
+- `app/js/chat.js`: optimized read-only chat (live IRC, and the synchronized replay for VODs)
+- `app/js/ads.js`: detects ads in the live playlist (the player mutes the audio during them)
+- `app/js/resume.js`: VOD resume position (local and, when available, from Twitch)
 - `app/js/settings.js`: settings (Green button)
+- `app/js/credits.js`: credits screen (Settings > Credits), with the donation QR from `CONFIG.CREDITS` in `app/js/config.js`
 - `app/js/login.js`, `player.js`, `app.js`: sign-in screen, player, views and remote control
 - `app/js/i18n.js`: translations (English and Spanish)
 - `tools/build.mjs`: inlines CSS and JS, minifies lightly and generates the icons

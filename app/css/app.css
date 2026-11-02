@@ -90,3 +90,18 @@ html,body{margin:0;height:100%;background:#0e0e10;color:#efeff1;overflow:hidden;
 #lc{font:bold 4vw monospace;letter-spacing:.5vw;color:#bf94ff;margin:1.2vw 0;min-height:4.6vw}
 #ls{white-space:pre-line;color:#d0d0d8;line-height:1.5}
 #lh{margin-top:2vw;color:#adadb8;font-size:1.1vw}
+/* créditos (Ajustes > Créditos): encima de los ajustes (z-index 13). El QR va sobre blanco, como el de la cuenta */
+#credits{position:fixed;top:0;left:0;right:0;bottom:0;z-index:13;background:rgba(14,14,16,.97);display:flex;align-items:center;justify-content:center}
+#cbox{width:56vw;background:#18181b;border-radius:1vw;padding:1.8vw 2.2vw;box-sizing:border-box}
+#ctitle{font-size:2.2vw;font-weight:bold;margin-bottom:2vw}
+#cbody{display:flex;align-items:center}
+#cqrcol{width:20vw;text-align:center}
+#cqr{width:20vw;height:20vw;background:#fff;border-radius:1vw;overflow:hidden}
+#cqr:empty{background:#18181b}
+#cqr svg{display:block;width:100%;height:100%}
+#cqrtxt{margin-top:1vw;color:#d0d0d8;font-size:1.2vw;line-height:1.3}
+#cside{flex:1;min-width:0;margin-left:3vw}
+#cmade{font-size:2vw;font-weight:bold}
+#curl{margin-top:1vw;color:#bf94ff;font-size:1.4vw;word-wrap:break-word}
+#cwarn{margin-top:2.5vw;color:#adadb8;font-size:1.2vw;line-height:1.4}
+#chint{margin-top:2vw;color:#adadb8;font-size:1.1vw}

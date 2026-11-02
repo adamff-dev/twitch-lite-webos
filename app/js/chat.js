@@ -1,4 +1,4 @@
-/* Chat de Twitch de solo lectura, pensado para TVs con pocos recursos:
+/* Chat de Twitch de solo lectura (en directo por IRC; en un VOD, la repetición sincronizada), pensado para TVs con pocos recursos:
    - una única conexión WebSocket (IRC anónimo), abierta solo mientras el chat está visible;
    - N nodos del DOM fijos que se reciclan (nunca se crean/destruyen elementos en caliente);
    - como mucho 4 repintados por segundo y un tope de mensajes por repintado (ante una ráfaga se descartan los antiguos);
@@ -120,15 +120,80 @@
   }
   function clearList() { while (list.firstChild) list.removeChild(list.firstChild); }
 
+  /* ---------- chat de un VOD: la repetición de la emisión, sincronizada con la posición del vídeo ----------
+     Se piden páginas de ~60 mensajes por GraphQL (sin WebSocket) y cada mensaje se pinta cuando el vídeo llega a su
+     segundo. Se pide la página siguiente cuando quedan pocos mensajes por delante. Si la posición salta (adelantar,
+     retroceder, cambiar de calidad) se vacía el panel y se vuelve a pedir desde la nueva posición. En pausa no sale nada. */
+  var VOD_TICK = 250;     // ms entre comprobaciones
+  var VOD_AHEAD = 30;     // mensajes por delante por debajo de los cuales se pide la página siguiente
+  var VOD_BACK = 10;      // segundos de contexto previos al empezar o tras un salto
+  var VOD_JUMP = 8;       // un avance mayor que esto (s entre dos comprobaciones) o cualquier retroceso es un salto
+  var vod = null, vodTimer = 0;
+
+  function vodStop() { clearInterval(vodTimer); vodTimer = 0; vod = null; }
+  function vodFetch() {
+    var s = vod;
+    if (!s || s.busy || !s.more || Date.now() < s.retryAt) return;
+    s.busy = true;
+    var gen = s.gen;
+    Api.vodComments(s.id, s.from, s.cursor).then(function (r) {
+      if (vod !== s || s.gen !== gen) return;                // ya hubo un salto o se cerró el chat
+      s.busy = false; s.buf = s.buf.concat(r.items); s.cursor = r.cursor; s.more = r.hasNext && !!r.cursor;
+      status('');
+    }, function () {
+      if (vod !== s || s.gen !== gen) return;
+      s.busy = false; s.retryAt = Date.now() + 3000;
+    });
+  }
+  function vodReset(t) {
+    var s = vod;
+    s.gen++; s.buf = []; s.bi = 0; s.cursor = null; s.more = true; s.busy = false; s.retryAt = 0;
+    s.last = t; s.from = Math.max(0, t - VOD_BACK);
+    clearList(); status(I18n.t('loading'));
+    vodFetch();
+  }
+  function vodPaint(m) {
+    var c = m.c, t = m.m;
+    if (!/^#[0-9A-Fa-f]{6}$/.test(c) || lum(c) < 70) c = '#bf94ff';
+    if (t.length > MAXLEN) t = t.slice(0, MAXLEN) + '…';
+    paint({ n: m.n, c: c, t: t, a: false });
+  }
+  function vodTick() {
+    var s = vod, t = s ? s.time() : -1;
+    if (!s || !(t >= 0)) return;
+    if (t < s.last - 1 || t > s.last + VOD_JUMP) vodReset(t);
+    s.last = t;
+    var out = [];
+    while (s.bi < s.buf.length && s.buf[s.bi].t <= t) out.push(s.buf[s.bi++]);
+    if (out.length > PER_FLUSH) out = out.slice(out.length - PER_FLUSH);    // tras un salto o una ráfaga: solo lo más reciente
+    for (var i = 0; i < out.length; i++) vodPaint(out[i]);
+    if (s.buf.length - s.bi < VOD_AHEAD) vodFetch();
+    if (s.bi > 200) { s.buf = s.buf.slice(s.bi); s.bi = 0; }               // no acumular lo ya mostrado
+  }
+  function vodStart() {
+    if (!vod || vodTimer) return;
+    vodReset(Math.max(0, vod.time() || 0));
+    vodTimer = setInterval(vodTick, VOD_TICK);
+  }
+
   function refresh() {
-    var show = on && !!chan;
+    var show = on && (!!chan || !!vod);
     box.hidden = !show;
-    if (show) connect(); else { disconnect(); clearList(); status(''); }
+    if (!show) { disconnect(); vodStop(); clearList(); status(''); }
+    else if (chan) connect();
+    else vodStart();
   }
 
   /* ---------- API ---------- */
-  function attach(login) { chan = login; refresh(); }
-  function detach() { chan = null; refresh(); box.hidden = true; }
+  function attach(login) { vodStop(); chan = login; refresh(); }
+  // Chat de un VOD: id del vídeo y función que devuelve la posición actual en segundos.
+  function attachVod(id, time) {
+    disconnect(); vodStop(); chan = null;
+    vod = { id: id, time: time, buf: [], bi: 0, cursor: null, more: true, busy: false, gen: 0, last: 0, from: 0, retryAt: 0 };
+    clearList();
+    refresh();
+  }
+  function detach() { chan = null; vodStop(); refresh(); box.hidden = true; }
   function toggle() {
     on = !on;
     try { localStorage.setItem('chat', on ? '1' : '0'); } catch (e) {}
@@ -136,5 +201,5 @@
     return on;
   }
 
-  w.Chat = { attach: attach, detach: detach, toggle: toggle, isOn: function () { return on; }, parse: parse, _stats: function () { return { nodes: list.children.length, painted: count, queued: queue.length, connected: !!ws }; } };
+  w.Chat = { attach: attach, attachVod: attachVod, detach: detach, toggle: toggle, isOn: function () { return on; }, parse: parse, _stats: function () { return { nodes: list.children.length, painted: count, queued: queue.length, connected: !!ws }; } };
 })(window);
