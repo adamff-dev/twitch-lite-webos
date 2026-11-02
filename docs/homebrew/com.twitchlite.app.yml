@@ -20,6 +20,7 @@ description: |
   - Content in your TV language
   - Configurable chat (size, width, height, corner, opacity)
   - English and Spanish interface
+  - Tries to restore the audio of VOD segments muted by Twitch and to play subscriber-only VODs from public CDN files. Both rely on how Twitch serves videos today and may stop working at any time; the first one can be turned off in Settings
 
   Source: https://github.com/adamff-dev/twitch-lite-webos
 
