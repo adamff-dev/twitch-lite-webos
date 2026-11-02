@@ -62,6 +62,7 @@ function net(o = {}) {
   const fetch = (url, opts = {}) => {
     calls.push({ url, opts });
     const body = opts.body;
+    if (url.startsWith('https://spade.twitch.tv')) return res({}, 204);
     if (url.startsWith('https://gql.twitch.tv')) {
       const j = JSON.parse(body);
       const h = opts.headers || {};
@@ -77,6 +78,7 @@ function net(o = {}) {
         return res([{ data: v.isVod ? { videoPlaybackAccessToken: { value: '{"v":1}', signature: 'sg' } } : { streamPlaybackAccessToken: { value: '{"l":1}', signature: 'sg' } } }]);
       }
       const q = j.query;
+      if (q.includes('user(login:') && q.includes('stream{id}')) return res({ data: { user: { id: 'chan-id', stream: { id: 'bcast-1' } } } });
       if (q.includes('viewingHistory')) return res({ data: { video: { self: { viewingHistory: o.vpos ? { position: o.vpos, updatedAt: o.vposAt || '2030-01-01T00:00:00Z' } : null } } } });
       if (q.includes('comments(')) {
         // chat de un VOD: un mensaje por segundo (offset = nº de mensaje), 60 por página; el cursor es el offset del último
@@ -425,6 +427,29 @@ function boot(o = {}) {
   assert.equal(h['X-Device-Id'].length, 32);
   t.w.Points.stop();
   ok('puntos: consulta con las cabeceras del cliente de TV y no reclama si no hay cofre');
+
+  // el aviso de visionado ("minute-watched") sale antes de consultar el cofre y lleva los ids del canal
+  const spadeCalls = (x) => x.N.calls.filter((c) => c.url === 'https://spade.twitch.tv/track');
+  t = boot({ ls: session });
+  t.w.Points.start('chan1', () => {}, () => true);
+  await t.until(() => spadeCalls(t).length === 1, 'aviso de visionado');
+  const sp = spadeCalls(t)[0];
+  assert.equal(sp.opts.method, 'POST');
+  assert.equal(sp.opts.mode, 'no-cors');
+  assert.equal(sp.opts.headers['Content-Type'], 'application/x-www-form-urlencoded');
+  const ev = JSON.parse(t.w.atob(decodeURIComponent(sp.opts.body.replace(/^data=/, ''))));
+  assert.deepEqual(J(ev), [{ event: 'minute-watched', properties: { channel_id: 'chan-id', broadcast_id: 'bcast-1', player: 'site', user_id: '42', live: true, channel: 'chan1' } }]);
+  await t.until(() => gqlCalls(t).length === 1, 'consulta de puntos tras el aviso');
+  t.w.Points.stop();
+
+  // en pausa (o con la pestaña oculta) no cuenta como estar viendo: ni aviso ni consulta de ids
+  t = boot({ ls: session });
+  t.w.Points.start('chan1', () => {}, () => false);
+  await t.until(() => gqlCalls(t).length === 1, 'consulta de puntos en pausa');
+  assert.equal(spadeCalls(t).length, 0, 'en pausa no se avisa de visionado');
+  assert.equal(t.N.calls.filter((c) => c.url.includes('gql') && /stream{id}/.test(c.opts.body)).length, 0);
+  t.w.Points.stop();
+  ok('puntos: avisa de visionado (minute-watched) solo mientras se reproduce y con los ids del canal');
 
   // con cofre: reclama y avisa con lo ganado y el total
   t = boot({ ls: session, claim: true });
