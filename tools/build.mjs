@@ -28,6 +28,8 @@ html = html.replace(/<script src="([^"]+)"><\/script>\s*/g, (_, f) => `<script>$
 html = html.replace(/>\s+</g, '><');
 fs.writeFileSync(path.join(out, 'index.html'), html);
 fs.copyFileSync(path.join(src, 'appinfo.json'), path.join(out, 'appinfo.json'));
+fs.mkdirSync(path.join(out, 'js'), { recursive: true });
+fs.copyFileSync(path.join(src, 'js', 'hls.light.min.js'), path.join(out, 'js', 'hls.light.min.js'));
 
 // --- Iconos PNG (morado Twitch + triángulo de play) ---
 const table = Array.from({ length: 256 }, (_, n) => {
@@ -69,4 +71,4 @@ fs.writeFileSync(path.join(out, 'largeIcon.png'), png(130));
 
 const kb = (f) => (fs.statSync(path.join(out, f)).size / 1024).toFixed(1) + ' KB';
 console.log(clientId ? 'Client ID personalizado (los puntos automáticos solo funcionan con el de la app de TV)' : 'Client ID por defecto (app de TV de Twitch)');
-console.log(`dist/index.html ${kb('index.html')} · icon ${kb('icon.png')} · largeIcon ${kb('largeIcon.png')}`);
+console.log(`dist/index.html ${kb('index.html')} · js/hls.light.min.js ${kb('js/hls.light.min.js')} · icon ${kb('icon.png')} · largeIcon ${kb('largeIcon.png')}`);
