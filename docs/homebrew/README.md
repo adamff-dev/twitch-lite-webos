@@ -11,12 +11,12 @@ Guide: https://www.webosbrew.org/develop/guides/publishing/how-to/ · Rules: htt
   Also test the oldest webOS release you claim to support, or set `requirements.webosRelease` in the YAML.
 - **Own account only.** A service client must use the viewer's own account and must not work around the account or the DRM. This app signs in with the viewer's own Twitch account.
 - **Icon and description should be your own work.** `docs/icon.png` is the generated icon from `tools/build.mjs`; replace it if you want something more personal.
-- `main` packages need a public `sourceUrl` (this repository) and an identifiable licence: **add a LICENSE file first** (none exists yet).
+- `main` packages need a public `sourceUrl` (this repository) and an identifiable licence: MIT, see `LICENSE`.
 
 ## Steps
 
 1. `npm install && npm run package` creates `out/com.twitchlite.app_<version>_all.ipk`.
-2. Generate the manifest from that exact IPK with the official tool (`webosbrew-toolbox-gen-manifest`, from https://github.com/webosbrew/dev-toolbox-cli).
+2. Generate the manifest from that exact IPK with the official tool (`webosbrew-toolbox-gen-manifest`, from https://github.com/webosbrew/dev-toolbox-cli; it is only shipped as a Linux .deb). For 1.1.0 it was generated with an equivalent script (same fields, SHA-256 and size of the exact IPK).
    It records `id`, `version`, `type`, `title`, `iconUri`, `sourceUrl`, `rootRequired` (`false`), `ipkUrl`, `ipkSize` and `ipkHash.sha256`.
    The hash and size describe one exact IPK: generate a new manifest for every release. Do not write it by hand.
 3. Create a GitHub release and attach **both** the IPK and `com.twitchlite.app.manifest.json`, so that
