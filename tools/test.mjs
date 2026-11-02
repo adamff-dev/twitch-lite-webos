@@ -875,13 +875,21 @@ function boot(o = {}) {
   const base = Date.parse('2026-11-02T17:00:00.000Z');
   const iso = (ms) => new Date(ms).toISOString();
   const seg = (i, title = 'live') => `#EXT-X-PROGRAM-DATE-TIME:${iso(base + i * 2000)}\n#EXTINF:2.000,${title}\nhttps://seg/${i}.ts`;
-  const list = (titles = []) => '#EXTM3U\n#EXT-X-TARGETDURATION:2\n' + [0, 1, 2, 3, 4].map((i) => seg(i, titles[i])).join('\n');
+  const list = (titles = [], off = 0) => '#EXTM3U\n#EXT-X-TARGETDURATION:2\n' + [0, 1, 2, 3, 4].map((i) => seg(i + off, titles[i])).join('\n');
   const dr = `#EXT-X-DATERANGE:ID="stitched-ad-1",CLASS="twitch-stitched-ad",START-DATE="${iso(base + 4000)}",DURATION=4.000\n`;
   // el borde en vivo de la lista es base+10 s; el anuncio ocupa de base+4 s a base+8 s
   assert.equal(w.Ads.playingAd(list(), 4), false, 'sin anuncio');
   assert.equal(w.Ads.playingAd(dr + list(), 4), true, 'DATERANGE stitched-ad: suena el tramo del anuncio');
   assert.equal(w.Ads.playingAd(dr + list(), 0), false, 'ya en el borde (después del anuncio)');
   assert.equal(w.Ads.playingAd(dr + list(), 7), false, 'aún antes del anuncio');
+  // con antelación: se silencia justo ANTES de que suene (aquí suena a los 4 s y el vídeo va por los 3 s), pero no se alarga al terminar
+  assert.equal(w.Ads.playingAd(dr + list(), 7, 2), true, 'el anuncio empieza en 1 s: ya se silencia');
+  assert.equal(w.Ads.playingAd(dr + list(), 7, 0.5), false, 'aún falta más que la antelación');
+  assert.equal(w.Ads.playingAd(dr + list(), 1.9, 2), false, 'sin margen final, tras el anuncio no se mantiene el silencio');
+  // con margen final: el audio no vuelve hasta 2 s después de acabar (el anuncio acaba a los 8 s)
+  assert.equal(w.Ads.playingAd(dr + list(), 1.9, 2, 2), true, 'acabó hace 0,1 s: sigue en silencio');
+  assert.equal(w.Ads.playingAd(dr + list(), 0, 2, 2), false, 'acabó hace 2 s: el audio vuelve');
+  assert.equal(w.Ads.playingAd(dr + list(), 2.1, 2), true, 'el anuncio aún suena (acaba a los 8 s, el vídeo va por 7.9 s)');
   assert.equal(w.Ads.playingAd(list([, , , 'Amazon', 'Amazon']), 3), true, 'segmentos con título de anunciante');
   assert.equal(w.Ads.playingAd('#EXTM3U\n#EXTINF:2.000,live\nhttps://seg/0.ts', 0), false, 'sin fechas no se puede saber');
   ok('anuncios: detección por DATERANGE stitched-ad y por título de segmento, según el retraso del reproductor');
@@ -900,9 +908,11 @@ function boot(o = {}) {
   media = dr + list();
   await t.until(() => v.muted, 'audio silenciado durante el anuncio', 4500);
   assert.match(t.$('ptoast').textContent, /Anuncio/);
-  media = list();
+  media = list([], 20);                                        // el directo avanza y el vídeo sale del anuncio (96 → 99,5 s)
+  v.__t = 99.5;
   await t.until(() => !v.muted, 'audio recuperado al acabar el anuncio', 4500);
   media = dr + list();
+  v.__t = 96;                                                  // otra vez dentro del anuncio
   await t.until(() => v.muted, 'segundo anuncio', 4500);
   t.key(t.K.back);
   assert.equal(v.muted, false, 'al salir el audio no se queda silenciado');

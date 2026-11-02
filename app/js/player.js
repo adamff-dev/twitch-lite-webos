@@ -16,7 +16,9 @@
   var pausedAt = 0;          // instante en que se pausó un directo (0 = no hay pausa pendiente de reanudar)
   var LIVE_SKIP_MS = 2000;   // pausa de un directo más larga que esto: al reanudar se salta al borde en vivo
   var LIVE_RELOAD_MS = 30000; // pausa tan larga que la lista HLS ya ha caducado: al reanudar se recarga el flujo
-  var ADS_EVERY = 3000;      // ms entre lecturas de la lista de medios para detectar anuncios
+  var ADS_EVERY = 1000;      // ms entre lecturas de la lista de medios para ver anuncios nuevos
+  var AD_LEAD = 2;           // s de antelación con que se silencia: el anuncio llega a la lista ~2-3 s antes de sonar
+  var AD_TAIL = 2;           // s que sigue en silencio tras acabar el anuncio (la posición estimada no es exacta)
   var badQ = {};           // calidades que han fallado en esta sesión (algunos VODs no tienen todas)
   var STEPS = [10, 10, 30, 30, 60, 60, 120, 120, 300];     // segundos por pulsación según la racha de pulsaciones rápidas
 
@@ -173,7 +175,7 @@
     Api.text(u).then(function (t) {
       if (id !== loadId || !isOpen) return;
       adFails = 0;
-      var ad = Ads.playingAd(t, adLag());
+      var ad = Ads.playingAd(t, adLag(), AD_LEAD, AD_TAIL);
       if (!ad) adBlock = false;
       else if (adOn && Date.now() - adSince > AD_MAX_MS) { adBlock = true; ad = false; }   // un anuncio no dura tanto: algo va mal
       setAd(ad && !adBlock);
@@ -181,7 +183,7 @@
       if (id === loadId && ++adFails >= AD_FAILS) setAd(false);                // sin poder leer la lista no se sigue en mudo
     });
   }
-  function startAds() { if (!isVod && !adT) adT = setInterval(adTick, ADS_EVERY); }
+  function startAds() { if (!isVod && !adT) { adT = setInterval(adTick, ADS_EVERY); adTick(); } }     // primera lectura ya: un pre-roll no se cuela
   function stopAds() { clearInterval(adT); adT = 0; adFails = 0; adBlock = false; setAd(false); }
 
   // Posición del VOD: se guarda cada 15 s, al pausar, al salir y al pasar a segundo plano (ver resume.js).

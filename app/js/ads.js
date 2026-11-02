@@ -36,16 +36,18 @@
     return { ads: ads, edge: edge };
   }
 
-  // ¿El instante `at` (ms epoch) cae dentro de un anuncio?
-  function isAd(p, at) {
-    for (var i = 0; i < p.ads.length; i++) if (at >= p.ads[i][0] && at < p.ads[i][1]) return true;
+  // ¿Algún anuncio suena en `at` (ms epoch), empieza en los `lead` ms siguientes o acabó hace menos de `tail` ms?
+  // La posición que se estima del vídeo no es exacta (puede ir ~1 s adelantada o atrasada), así que el silencio se
+  // adelanta al inicio (lead) y se alarga al final (tail): se pierde algo de audio del directo, pero no se oye el anuncio.
+  function isAd(p, at, lead, tail) {
+    for (var i = 0; i < p.ads.length; i++) if (p.ads[i][0] <= at + (lead || 0) && p.ads[i][1] + (tail || 0) > at) return true;
     return false;
   }
 
-  // lagSec: segundos que el reproductor va por detrás del borde en vivo de la lista.
-  function playingAd(txt, lagSec) {
+  // lagSec: segundos que el reproductor va por detrás del borde en vivo de la lista. leadSec/tailSec: márgenes del silencio.
+  function playingAd(txt, lagSec, leadSec, tailSec) {
     var p = parse(txt);
-    return !!p.edge && isAd(p, p.edge - lagSec * 1000);
+    return !!p.edge && isAd(p, p.edge - lagSec * 1000, (leadSec || 0) * 1000, (tailSec || 0) * 1000);
   }
 
   w.Ads = { parse: parse, isAd: isAd, playingAd: playingAd };
