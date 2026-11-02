@@ -149,8 +149,13 @@ The app targets webOS 4 and later (Chromium 53), so the code avoids `async/await
 - `app/js/chat.js`: optimized read-only chat (live IRC, and the synchronized replay for VODs)
 - `app/js/ads.js`: detects ads in the live playlist (the player mutes the audio during them)
 - `app/js/resume.js`: VOD resume position (local and, when available, from Twitch)
+- `app/js/unmute.js`: restores the audio of muted VOD segments (loads `hls.light.min.js` on demand)
 - `app/js/settings.js`: settings (Green button)
 - `app/js/credits.js`: credits screen (Settings > Credits), with the donation QR from `CONFIG.CREDITS` in `app/js/config.js`
 - `app/js/login.js`, `player.js`, `app.js`: sign-in screen, player, views and remote control
 - `app/js/i18n.js`: translations (English and Spanish)
 - `tools/build.mjs`: inlines CSS and JS, minifies lightly and generates the icons
+
+## License
+
+[MIT](LICENSE). The bundled hls.js is licensed under Apache-2.0.
