@@ -1,0 +1,15 @@
+# Borrador del archivo para https://github.com/webosbrew/apps-repo  ->  packages/com.twitchlite.app.yml
+# (ver docs/homebrew/README.md antes de enviarlo)
+title: Twitch Lite
+iconUri: https://raw.githubusercontent.com/adamff-dev/twitch-lite-webos/master/docs/icon.png
+manifestUrl: https://github.com/adamff-dev/twitch-lite-webos/releases/latest/download/com.twitchlite.app.manifest.json
+category: internet
+pool: main
+shortDescription: A lightweight Twitch client for webOS TVs
+description: |
+  An unofficial, lightweight Twitch client built for modest TVs: native HLS playback, a read-only chat that
+  also works on VODs, resume of past broadcasts, and sign-in with a QR code. No frameworks.
+
+  Not made by, endorsed by or affiliated with Twitch Interactive, Inc.
+
+  ![Home screen](https://raw.githubusercontent.com/adamff-dev/twitch-lite-webos/master/docs/screenshot-home.png)
