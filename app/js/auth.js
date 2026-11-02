@@ -36,6 +36,7 @@
     }, function () { return ''; });
   }
   function token() { return st.access || ''; }
+  function userId() { return st.userId || ''; }
 
   function clear() { st = {}; try { localStorage.removeItem('tauth'); } catch (e) {} }
 
@@ -168,7 +169,7 @@
   }
 
   w.Auth = {
-    init: init, isLoggedIn: isLoggedIn, login: login, token: token, avatar: avatar, logout: logout, begin: begin, poll: poll,
+    init: init, isLoggedIn: isLoggedIn, login: login, token: token, userId: userId, avatar: avatar, logout: logout, begin: begin, poll: poll,
     followedStreams: followedStreams, followedChannels: followedChannels
   };
 })(window);

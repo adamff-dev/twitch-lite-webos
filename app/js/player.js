@@ -61,7 +61,7 @@
     toastT = setTimeout(function () { toast.hidden = true; }, ms || 3000);
   }
   function claimed(earned, total) { flash(I18n.t('player.points', { n: fmtN(earned) }) + (total ? ' · ' + fmtN(total) : ''), 8000); }
-  function startPoints() { if (isOpen && !isVod && item) Points.start(item.login, claimed); }
+  function startPoints() { if (isOpen && !isVod && item) Points.start(item.login, claimed, function () { return !v.paused && !v.ended && !document.hidden; }); }
 
   /* ---------- chat ---------- */
   // Esquina, tamaño, letra y opacidad del chat según los ajustes; el panel y los avisos se apartan del chat.

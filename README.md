@@ -34,7 +34,7 @@ Without signing in you can use Home, Categories and Search. Following and Videos
 
 ## Automatic channel points
 
-While you watch a live stream with an active session, the app checks every 60 seconds for a bonus chest and claims it automatically. A banner appears in the player (`+50 points · 1,234`). To turn this off, set `localStorage.setItem('ptsOff', '1')` in the app's storage.
+While you watch a live stream with an active session, the app does two things every 60 seconds, only while the video is actually playing: it sends Twitch the same "minute-watched" viewing signal its own player sends (without it Twitch does not count your watch time, so no points accumulate and no chest ever appears), and it checks for a bonus chest and claims it automatically. A banner appears in the player (`+50 points · 1,234`). Both rely on undocumented Twitch endpoints and may stop working at any time. To turn this off, set `localStorage.setItem('ptsOff', '1')` in the app's storage.
 
 ## Muted VOD segments and sub-only VODs
 
