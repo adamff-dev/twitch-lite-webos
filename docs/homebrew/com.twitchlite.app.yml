@@ -15,7 +15,8 @@ description: |
 
   - Home, Categories, Following, Videos and Search, with number keys for each tab
   - Sign in with your own Twitch account by QR code
-  - Read-only chat for live streams, and a synchronized chat replay on past broadcasts
+  - Read-only chat for live streams, and a synchronized chat replay on past broadcasts, with Twitch, 7TV, BTTV and FFZ emotes (small static images, bounded memory)
+  - Ad blocking on live streams (on by default, can be turned off; it relies on how Twitch serves ads today)
   - VODs resume where you left them
   - Content in your TV language
   - Configurable chat (size, width, height, corner, opacity)
