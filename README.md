@@ -32,6 +32,7 @@ Twitch Lite lets you watch Twitch on an LG TV without the heavy official app, an
 
 **Your account (optional)**
 - Sign in by scanning a QR code with your phone: no typing on the remote. Then you get **Following**, your followed channels' videos, and channel points collected automatically while you watch (this uses Twitch's private API; see below).
+- **Live alerts**: while you watch a video or a live stream, a small message with the channel's picture tells you when another channel you follow goes live. It is on by default, you can turn it off or choose how often it checks in the settings, and it is built to cost almost nothing (see [Live alerts](#live-alerts)).
 
 **Light on purpose**
 - It starts quickly, loads only what it needs, and keeps memory use low, so it works well on TVs with little RAM.
@@ -133,6 +134,16 @@ On a live stream, resuming after a pause of more than 2 s jumps to the live edge
 
 **Stalls.** If a live stream stops receiving data for 8 s, the player jumps to the live edge and, if it is still stuck, reloads the stream.
 
+## Live alerts
+
+When you are signed in and watching something (a VOD or a live stream), the app tells you when **another channel you follow starts streaming**: a small box in the top-left corner with the channel's round picture, its name and the game, for 6 seconds. Several channels that go live together are shown one after another (up to 3 per check). It is informational only: it does not take the focus or change what you are watching.
+
+- It only runs **while the player is open and you are signed in**. On the menus nothing runs, and when the app goes to the background it stops asking.
+- When you open the player it takes a first list of who is live, **without alerting**: channels that were already live do not count. Only the ones that appear afterwards do. The channel you are watching is never announced.
+- Each check is **one small request** (`streams/followed`, Helix, 100 channels at most), every 1, 2, 5 or 10 minutes (**Settings > Check for live channels every**), never two at once. The picture is requested only when an alert is shown (70 px), and it is released when the box hides. Only the last 12 pictures stay in memory, and nothing is written to disk.
+- It uses the same sign-in as **Following** (scope `user:read:follows`), so it works with any Client ID and needs nothing extra.
+- Turn it off in **Settings > Alert me when followed channels go live**: with it off, no request is made.
+
 ## Settings
 
 Press **Green** to open the settings. ▲ ▼ move between rows, ◀ ▶ change the value, OK goes to the next value, and Back or Green closes it. Changes apply immediately and are saved on the TV:
@@ -142,6 +153,8 @@ Press **Green** to open the settings. ▲ ▼ move between rows, ◀ ▶ change 
 - **Restore muted audio**: *Yes* (the default) or *No*. See [Muted VOD segments and sub-only VODs](#muted-vod-segments-and-sub-only-vods).
 - **Block ads**: *Yes* (the default) or *No*. See the **Ads** paragraphs above.
 - **Player type (usher)**: *Twitch Web* (the default), *HTML5*, *Web* or *Site*. Changing it, or Block ads, reloads the live stream you are watching.
+- **Alert me when followed channels go live**: *Yes* (the default) or *No*. See [Live alerts](#live-alerts).
+- **Check for live channels every**: 1, 2 (the default), 5 or 10 min.
 - **Chat**:
   - emotes: *Yes* (the default) or *No*. See [Emotes](#emotes);
   - text size (4 levels);
@@ -199,6 +212,7 @@ The app targets webOS 4 and later (Chromium 53), so the code avoids `async/await
 - `app/js/ads.js`: detects ads in the live playlist (the player mutes the audio during them)
 - `app/js/adblock.js`: optional ad blocking: hls.js playlist loader that removes ad segments from live streams
 - `app/js/resume.js`: VOD resume position (local and, when available, from Twitch)
+- `app/js/notify.js`: live alerts for followed channels while the player is open
 - `app/js/unmute.js`: restores the audio of muted VOD segments (loads `hls.light.min.js` on demand)
 - `app/js/settings.js`: settings (Green button)
 - `app/js/credits.js`: credits screen (Settings > Credits), with the donation QR from `CONFIG.CREDITS` in `app/js/config.js`

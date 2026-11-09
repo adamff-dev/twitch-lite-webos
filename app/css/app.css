@@ -39,6 +39,14 @@ html,body{margin:0;height:100%;background:#0e0e10;color:#efeff1;overflow:hidden;
 #pmsg{position:absolute;top:45%;left:0;right:0;text-align:center;font-size:2vw;text-shadow:0 0 .5vw #000}
 #pstate{position:absolute;top:38%;left:0;right:0;text-align:center;font-size:3vw;font-weight:bold;text-shadow:0 0 .6vw #000}
 #ptoast{position:absolute;top:3vw;right:3vw;padding:.8vw 1.6vw;background:rgba(145,70,255,.92);border-radius:.6vw;font-size:1.5vw;font-weight:bold}
+/* aviso de directo de un canal seguido (notify.js): arriba a la izquierda, lejos del chat (derecha por defecto) y del aviso morado */
+#live{position:absolute;top:3vw;left:3vw;display:flex;align-items:center;max-width:32vw;padding:.7vw 1.6vw .7vw .7vw;background:rgba(24,24,27,.95);border-left:.35vw solid #bf94ff;border-radius:.6vw}
+#live.r{left:auto;right:3vw}
+#limg{flex:none;width:3.6vw;height:3.6vw;margin-right:1vw;border-radius:50%;background:#3a3a3d}
+#limg:not([src]){display:none}
+#ltxt{min-width:0}
+#lname{font-size:1.5vw;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#lsub{margin-top:.2vw;font-size:1.15vw;color:#adadb8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #ovl{position:absolute;left:0;right:0;bottom:0;padding:5vw 3vw 2vw;background:rgba(0,0,0,.6)}
 #oname{font-size:2.2vw;font-weight:bold}
 #oinfo{color:#d0d0d8;margin-top:.4vw}

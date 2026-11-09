@@ -411,7 +411,7 @@
   function close() {
     savePos(true);
     loadId++; isOpen = false; menu = false; resumeAt = 0; clearTimeout(hideT); clearTimeout(toastT); resetSeek();
-    Points.stop(); Chat.detach(); applyChat(); stopAds();
+    Points.stop(); Chat.detach(); applyChat(); stopAds(); Notify.stop();
     stop(); say(''); st.hidden = true; toast.hidden = true;
     el.hidden = true; qm.hidden = true; ovl.hidden = true;
     item = null; quals = [];
@@ -426,6 +426,7 @@
     quals = []; qi = 0;
     focusDefault();
     info(); showOvl(); load(); startPoints(); startChat();
+    Notify.start(isVod ? '' : it.login);               // aviso de directos de canales seguidos (en un VOD se avisa de todos)
   }
 
   /* ---------- saltos acelerados (VOD) ----------

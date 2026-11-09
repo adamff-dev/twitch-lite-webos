@@ -182,8 +182,29 @@
     });
   }
 
+  // Canales seguidos que están en directo AHORA: una sola petición (la primera página de 100) y solo los campos mínimos.
+  // La usa el aviso de directos (notify.js); no pide imágenes ni más páginas.
+  function liveNow() {
+    return helix('streams/followed?user_id=' + st.userId + '&first=100').then(function (j) {
+      return (j.data || []).map(function (s) { return { id: s.user_id || s.user_login, login: s.user_login, name: s.user_name || s.user_login, game: s.game_name || '' }; });
+    });
+  }
+
+  // Foto de perfil de un canal (para el aviso). Pocas entradas en memoria: solo las de los últimos avisos.
+  var pics = {}, picIds = [], PICS_MAX = 12;
+  function userImage(id, size) {
+    if (!id || !st.access) return Promise.resolve('');
+    if (pics[id] !== undefined) return Promise.resolve(sized(pics[id], size));
+    return helix('users?id=' + encodeURIComponent(id)).then(function (j) {
+      var u = j.data && j.data[0], url = u && u.profile_image_url || '';
+      pics[id] = url; picIds.push(id);
+      if (picIds.length > PICS_MAX) delete pics[picIds.shift()];
+      return sized(url, size);
+    }, function () { return ''; });
+  }
+
   w.Auth = {
     init: init, isLoggedIn: isLoggedIn, login: login, token: token, userId: userId, tvSession: tvSession, deviceId: deviceId, avatar: avatar, logout: logout, begin: begin, poll: poll,
-    followedStreams: followedStreams, followedChannels: followedChannels
+    followedStreams: followedStreams, followedChannels: followedChannels, liveNow: liveNow, userImage: userImage
   };
 })(window);
