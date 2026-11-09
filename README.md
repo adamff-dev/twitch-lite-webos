@@ -220,6 +220,28 @@ The app targets webOS 4 and later (Chromium 53), so the code avoids `async/await
 - `app/js/i18n.js`: translations (English and Spanish)
 - `tools/build.mjs`: inlines CSS and JS, minifies lightly and generates the icons
 
+## Contribution
+
+We welcome contributions of any kind — code, documentation, bug reports, or feature suggestions.
+
+If you find this project helpful and want to support its development, consider making a donation.
+
+Your support helps keep the project active and maintained. Thank you! 🙌
+
+<div style="display: flex; gap: 10px;">
+  <a target="_blank" href="https://www.buymeacoffee.com/rSiZtB3"><img style="height: 50px" src="https://i.imgur.com/KCk0bxY.png" /></a>
+  <a target="_blank" href="https://www.paypal.com/donate/?hosted_button_id=3T9XNAPWW36Z2"><img style="height: 50px" src="https://i.imgur.com/Z3x38ey.png" /></a>
+</div>
+
+## Cryptocurrency Donations
+
+You can also support the project with cryptocurrency:
+
+- **Bitcoin:** `bc1qrcdyq2yjgv5alm9kky2e6vyfhnafn3wgd2gjls`
+- **Ethereum:** `0x43b9649985d6789452abe23beb1eb610cee88817`
+- **Solana:** `4qK7eSQemRj85VY9CQp5XHRwX5fNjoSJ1ou4gmqk6jtM`
+- **Litecoin:** `ltc1qp6mya23a73n36dc7r0tfwfphn2v53phmhen99j`
+
 ## License
 
 [MIT](LICENSE). The bundled hls.js is licensed under Apache-2.0.
