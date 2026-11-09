@@ -146,7 +146,7 @@ When you are signed in and watching something (a VOD or a live stream), the app 
 
 ## Settings
 
-Press **Green** to open the settings. ▲ ▼ move between rows, ◀ ▶ change the value, OK goes to the next value, and Back or Green closes it. Changes apply immediately and are saved on the TV:
+Press **Green** to open the settings. ▲ ▼ move between rows (the list scrolls when it does not fit, and the bar on the right shows where you are), ◀ ▶ change the value, OK goes to the next value, and Back or Green closes it. Changes apply immediately and are saved on the TV:
 
 - **Tab on app start**: Home, Categories, Following or Videos.
 - **Content from my country**: *Automatic* (the default: Home and category streams use your system language, see [Language](#language)) or *Everything*. Changing it reloads Home and Categories.

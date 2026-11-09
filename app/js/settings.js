@@ -4,7 +4,7 @@
 (function (w) {
   'use strict';
   var $ = function (i) { return document.getElementById(i); };
-  var box = $('settings'), rowsEl = $('srows'), hintEl = $('shint');
+  var box = $('settings'), rowsEl = $('srows'), hintEl = $('shint'), wrap = $('swrap'), bar = $('sbar'), thumb = $('sthumb');
   var STORE = 'settings';
   var FONTS = { s: 1.15, m: 1.6, l: 2, xl: 2.4 };                           // vw
   function range(a, b, step) { var r = []; for (var i = a; i <= b; i += step) r.push(i); return r; }
@@ -52,6 +52,25 @@
     h += '<div class="si rs' + (sel === ITEMS.length + 1 ? ' on' : '') + '"><span>' + I18n.t('set.reset') + '</span></div>';
     rowsEl.innerHTML = h;
     hintEl.textContent = I18n.t('set.hint');
+    scroll();
+  }
+
+  // Mantiene la fila elegida a la vista (solo se mide al cambiar de fila) y coloca el tirador de la barra, que es solo visual.
+  function scroll() {
+    var row = rowsEl.children[sel], ch = wrap.clientHeight, sh = wrap.scrollHeight;
+    if (row && sh > ch) {
+      var top = row.offsetTop, bottom = top + row.offsetHeight;
+      if (sel === 0) wrap.scrollTop = 0;
+      else if (top < wrap.scrollTop) wrap.scrollTop = top;
+      else if (bottom > wrap.scrollTop + ch) wrap.scrollTop = bottom - ch;
+    }
+    bar.hidden = !(sh > ch);                                   // cabe todo: no hay barra
+    if (bar.hidden) return;
+    bar.style.top = wrap.offsetTop + 'px';
+    bar.style.height = ch + 'px';
+    var th = Math.max(ch * ch / sh, ch * 0.08), max = sh - ch;
+    thumb.style.height = th + 'px';
+    thumb.style.top = (max > 0 ? wrap.scrollTop / max * (ch - th) : 0) + 'px';
   }
 
   // dir: -1 / +1. Con wrap (OK) da la vuelta; con ◀ ▶ se queda en los extremos.

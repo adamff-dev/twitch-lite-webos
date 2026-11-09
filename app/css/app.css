@@ -81,7 +81,11 @@ html,body{margin:0;height:100%;background:#0e0e10;color:#efeff1;overflow:hidden;
 #settings.pl{background:rgba(14,14,16,.35)}
 #settings.al{justify-content:flex-start;padding-left:3vw}
 #settings.ar{justify-content:flex-end;padding-right:3vw}
-#sbox{width:44vw;background:#18181b;border-radius:1vw;padding:1.8vw 2.2vw}
+/* el panel nunca pasa de la pantalla: las filas (#swrap) se desplazan con la selección y #sbar/#sthumb (solo visual) muestran dónde estás */
+#sbox{position:relative;display:flex;flex-direction:column;max-height:92vh;width:44vw;box-sizing:border-box;background:#18181b;border-radius:1vw;padding:1.8vw 2.2vw}
+#swrap{position:relative;flex:1 1 auto;min-height:0;overflow:hidden;margin-right:1.4vw}
+#sbar{position:absolute;right:1vw;width:.45vw;background:rgba(255,255,255,.12);border-radius:.3vw}
+#sthumb{position:absolute;left:0;right:0;top:0;background:#bf94ff;border-radius:.3vw}
 #stitle{font-size:2.2vw;font-weight:bold;margin-bottom:1vw}
 .si{display:flex;justify-content:space-between;padding:.7vw 1.2vw;border-radius:.5vw;margin-bottom:.3vw;color:#d0d0d8}
 .si.on{background:#bf94ff;color:#000}

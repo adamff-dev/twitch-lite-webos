@@ -1403,6 +1403,43 @@ function boot(o = {}) {
   ok('aviso de directos: respeta el ajuste (apagado, intervalo) y no hace nada sin sesión');
 }
 
+/* ---------- 6e) ajustes: el panel no se sale de la pantalla (barra de desplazamiento visual) ---------- */
+{
+  // jsdom no hace layout: se simula un área de 300 px con 16 filas de 50 px (800 px de contenido)
+  let t = boot();
+  assert.equal(t.$('swrap').scrollHeight, 0);
+  t.key(t.K.green);
+  assert.equal(t.$('sbar').hidden, true, 'si todo cabe no hay barra');
+  t.key(t.K.green);
+
+  t = boot();
+  const w = t.w, wrap = t.$('swrap');
+  let st = 0;
+  Object.defineProperty(wrap, 'clientHeight', { get: () => 300 });
+  Object.defineProperty(wrap, 'scrollHeight', { get: () => 800 });
+  Object.defineProperty(wrap, 'scrollTop', { get: () => st, set: (x) => { st = Math.max(0, Math.min(500, x)); } });
+  Object.defineProperty(w.HTMLElement.prototype, 'offsetTop', { get() { return this.classList.contains('si') ? [...this.parentNode.children].indexOf(this) * 50 : 0; }, configurable: true });
+  Object.defineProperty(w.HTMLElement.prototype, 'offsetHeight', { get() { return this.classList.contains('si') ? 50 : 0; }, configurable: true });
+  const thumb = () => ({ h: parseFloat(t.$('sthumb').style.height), top: parseFloat(t.$('sthumb').style.top) });
+  t.key(t.K.green);
+  assert.equal(t.$('sbar').hidden, false, 'si no cabe se ve la barra');
+  assert.equal(t.$('sbar').style.height, '300px', 'la barra mide lo que el área de filas');
+  assert.deepEqual(thumb(), { h: 112.5, top: 0 }, 'arriba: el tirador está al principio');
+  for (let i = 0; i < 5; i++) t.key(t.K.down);
+  assert.equal(st, 0, 'las filas visibles no desplazan');
+  for (let i = 0; i < 3; i++) t.key(t.K.down);                 // fila 8: su borde inferior (450) pasa de 300
+  assert.equal(st, 150);
+  assert.equal(thumb().top, 56.25, 'el tirador baja con la selección');
+  for (let i = 0; i < 7; i++) t.key(t.K.down);                 // Restablecer (fila 15)
+  assert.equal(st, 500, 'la última fila queda a la vista');
+  assert.equal(thumb().top, 187.5, 'abajo: el tirador llega al final de la barra');
+  for (let i = 0; i < 15; i++) t.key(t.K.up);
+  assert.equal(st, 0, 'al volver a la primera fila se sube del todo');
+  assert.equal(thumb().top, 0);
+  t.key(t.K.green);
+  ok('ajustes: el área de filas se desplaza con la selección y la barra muestra por dónde vas');
+}
+
 /* ---------- 7) chat optimizado ---------- */
 {
   const line = (name, text, tags = '') => `${tags ? '@' + tags + ' ' : ''}:${name}!${name}@${name}.tmi.twitch.tv PRIVMSG #chan1 :${text}`;
