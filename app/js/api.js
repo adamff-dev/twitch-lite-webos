@@ -163,7 +163,7 @@
         edges.forEach(function (e) {
           var n = e.node;
           items.push({
-            type: 'video', id: n.id, name: u.displayName, title: n.title || I18n.t('video.untitled'),
+            type: 'video', id: n.id, login: u.login, name: u.displayName, title: n.title || I18n.t('video.untitled'),
             game: n.game ? n.game.displayName : '', views: n.viewCount || 0, duration: n.lengthSeconds || 0,
             date: String(n.createdAt || '').slice(0, 10), thumb: n.previewThumbnailURL || ''
           });
@@ -172,18 +172,27 @@
       });
   }
 
-  // Chat de un VOD: mensajes {t: segundo del vídeo, n: nombre, c: color, m: texto}. Primera página desde un segundo
+  // Id numérico de un canal a partir de su login ('' si no existe). Lo piden 7TV y BTTV para los emotes.
+  function channelId(login) {
+    return query('{user(login:' + JSON.stringify(String(login)) + '){id}}').then(function (d) { return (d.user && d.user.id) || ''; });
+  }
+
+  // Chat de un VOD: mensajes {t: segundo del vídeo, n: nombre, c: color, m: texto, e: emotes de Twitch}. Primera página desde un segundo
   // (offset); las siguientes con el cursor devuelto. Cada página trae ~60 mensajes ordenados por tiempo.
   function vodComments(id, offset, cursor) {
     var a = cursor ? 'after:' + JSON.stringify(cursor) : 'contentOffsetSeconds:' + Math.max(0, Math.floor(offset || 0));
-    return query('{video(id:' + JSON.stringify(String(id)) + '){comments(' + a + ',first:100){edges{cursor node{contentOffsetSeconds commenter{displayName} message{userColor fragments{text}}}} pageInfo{hasNextPage}}}}')
+    return query('{video(id:' + JSON.stringify(String(id)) + '){comments(' + a + ',first:100){edges{cursor node{contentOffsetSeconds commenter{displayName} message{userColor fragments{text emote{emoteID}}}}} pageInfo{hasNextPage}}}}')
       .then(function (d) {
         var c = d.video && d.video.comments, e = (c && c.edges) || [];
         return {
           items: e.map(function (x) {
-            var n = x.node, f = (n.message && n.message.fragments) || [], s = '';
-            for (var i = 0; i < f.length; i++) s += f[i].text || '';
-            return { t: n.contentOffsetSeconds || 0, n: n.commenter ? n.commenter.displayName : '', c: (n.message && n.message.userColor) || '', m: s };
+            var n = x.node, f = (n.message && n.message.fragments) || [], s = '', e = '', len = 0;
+            for (var i = 0; i < f.length; i++) {
+              var tx = f[i].text || '', cp = tx.replace(/[\ud800-\udbff][\udc00-\udfff]/g, '_').length;   // Twitch cuenta puntos de código
+              if (f[i].emote && f[i].emote.emoteID) e += (e ? '/' : '') + f[i].emote.emoteID + ':' + len + '-' + (len + cp - 1);   // mismo formato que la etiqueta emotes del IRC
+              s += tx; len += cp;
+            }
+            return { t: n.contentOffsetSeconds || 0, n: n.commenter ? n.commenter.displayName : '', c: (n.message && n.message.userColor) || '', m: s, e: e };
           }),
           cursor: e.length ? e[e.length - 1].cursor : null,
           hasNext: !!(c && c.pageInfo && c.pageInfo.hasNextPage)
@@ -315,5 +324,5 @@
     });
   }
 
-  w.Api = { MAX: MAX, timeout: timeout, channelVideos: channelVideos, topStreams: topStreams, topGames: topGames, gameStreams: gameStreams, search: search, playback: playback, parseMaster: parseMaster, lang: lang, vodComments: vodComments, text: text };
+  w.Api = { MAX: MAX, timeout: timeout, channelVideos: channelVideos, topStreams: topStreams, topGames: topGames, gameStreams: gameStreams, search: search, playback: playback, parseMaster: parseMaster, lang: lang, vodComments: vodComments, channelId: channelId, text: text };
 })(window);

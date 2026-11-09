@@ -2,7 +2,7 @@
    - una única conexión WebSocket (IRC anónimo), abierta solo mientras el chat está visible;
    - N nodos del DOM fijos que se reciclan (nunca se crean/destruyen elementos en caliente);
    - como mucho 4 repintados por segundo y un tope de mensajes por repintado (ante una ráfaga se descartan los antiguos);
-   - sin imágenes (los emotes salen como texto) y solo se parsean los mensajes que se van a pintar. */
+   - los emotes son imágenes pequeñas y estáticas con caché de memoria acotada (emotes.js); solo se parsean los mensajes que se van a pintar. */
 (function (w) {
   'use strict';
   var WS_URL = 'wss://irc-ws.chat.twitch.tv:443';
@@ -45,7 +45,7 @@
     var action = text.charCodeAt(0) === 1 && text.indexOf('ACTION ') === 1;
     if (action) text = text.slice(8, text.charCodeAt(text.length - 1) === 1 ? -1 : undefined);
     if (text.length > MAXLEN) text = text.slice(0, MAXLEN) + '…';
-    return { n: name, c: color, t: text, a: action };
+    return { n: name, c: color, t: text, a: action, e: tag(tags, 'emotes') };
   }
 
   /* ---------- pintado: nodos reciclados ---------- */
@@ -63,7 +63,7 @@
     var d = node(), b = d.firstChild, s = d.lastChild;
     b.textContent = m.n + (m.a ? '' : ':');
     b.style.color = m.c;
-    s.textContent = m.t;
+    w.Emotes.fill(s, m.t, m.e);                           // texto, con los emotes como imágenes si están activados
     s.className = m.a ? 'me' : '';
     list.appendChild(d);                                  // mover el nodo al final = orden cronológico
     count++;
@@ -156,7 +156,7 @@
     var c = m.c, t = m.m;
     if (!/^#[0-9A-Fa-f]{6}$/.test(c) || lum(c) < 70) c = '#bf94ff';
     if (t.length > MAXLEN) t = t.slice(0, MAXLEN) + '…';
-    paint({ n: m.n, c: c, t: t, a: false });
+    paint({ n: m.n, c: c, t: t, a: false, e: m.e });
   }
   function vodTick() {
     var s = vod, t = s ? s.time() : -1;
@@ -179,19 +179,20 @@
   function refresh() {
     var show = on && (!!chan || !!vod);
     box.hidden = !show;
-    if (!show) { disconnect(); vodStop(); clearList(); status(''); }
+    if (!show) { disconnect(); vodStop(); clearList(); status(''); w.Emotes.release(); }
     else if (chan) connect();
     else vodStart();
   }
 
   /* ---------- API ---------- */
-  function attach(login) { vodStop(); chan = login; refresh(); }
-  // Chat de un VOD: id del vídeo y función que devuelve la posición actual en segundos.
-  function attachVod(id, time) {
+  function attach(login) { vodStop(); chan = login; refresh(); if (on && login) w.Emotes.use(login); }
+  // Chat de un VOD: id del vídeo, función que devuelve la posición actual en segundos y login del canal (para sus emotes).
+  function attachVod(id, time, login) {
     disconnect(); vodStop(); chan = null;
     vod = { id: id, time: time, buf: [], bi: 0, cursor: null, more: true, busy: false, gen: 0, last: 0, from: 0, retryAt: 0 };
     clearList();
     refresh();
+    if (on && login) w.Emotes.use(login);
   }
   function detach() { chan = null; vodStop(); refresh(); box.hidden = true; }
   function toggle() {

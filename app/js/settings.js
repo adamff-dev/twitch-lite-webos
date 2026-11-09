@@ -15,6 +15,7 @@
     { k: 'unmute', def: 'on', vals: ['on', 'off'], tr: true },
     { k: 'adblock', def: 'on', vals: ['on', 'off'], tr: true },
     { k: 'usher', def: 'twitchweb', vals: ['twitchweb', 'html5', 'web', 'site'], tr: true },
+    { k: 'emotes', def: 'on', vals: ['on', 'off'], tr: true },            // emotes del chat (Twitch, 7TV, BTTV, FFZ)
     { k: 'fs', def: 'm', vals: ['s', 'm', 'l', 'xl'], tr: true },
     { k: 'size', def: 25, vals: range(5, 100, 5), unit: '%' },
     { k: 'height', def: 100, vals: range(5, 100, 5), unit: '%' },      // alto del chat (% de la pantalla)

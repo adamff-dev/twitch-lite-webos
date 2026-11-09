@@ -80,10 +80,15 @@ function net(o = {}) {
       }
       const q = j.query;
       if (q.includes('user(login:') && q.includes('stream{id}')) return res({ data: { user: { id: 'chan-id', stream: { id: 'bcast-1' } } } });
+      if (/^\{user\(login:"[^"]*"\)\{id\}\}$/.test(q)) return res({ data: { user: { id: '777' } } });
       if (q.includes('viewingHistory')) return res({ data: { video: { self: { viewingHistory: o.vpos ? { position: o.vpos, updatedAt: o.vposAt || '2030-01-01T00:00:00Z' } : null } } } });
       if (q.includes('comments(')) {
         // chat de un VOD: un mensaje por segundo (offset = nº de mensaje), 60 por página; el cursor es el offset del último
         const m = /contentOffsetSeconds:(\d+)/.exec(q), a = /after:"c(\d+)"/.exec(q);
+        if (m && +m[1] === 7777) return res({ data: { video: { comments: { edges: [
+          { cursor: 'e1', node: { contentOffsetSeconds: 7777, commenter: { displayName: 'E1' }, message: { userColor: null, fragments: [{ text: 'Kappa', emote: { emoteID: '25' } }, { text: ' ', emote: null }, { text: 'Kappa', emote: { emoteID: '25' } }] } } },
+          { cursor: 'e2', node: { contentOffsetSeconds: 7778, commenter: { displayName: 'E2' }, message: { userColor: null, fragments: [{ text: '\u{1FAE0} ', emote: null }, { text: 'LUL', emote: { emoteID: 'emotesv2_abc' } }] } } },
+        ], pageInfo: { hasNextPage: false } } } } });
         const from = a ? +a[1] + 1 : m ? +m[1] : 0, items = Array.from({ length: 60 }, (_, i) => from + i);
         return res({ data: { video: { comments: { edges: items.map((s) => ({ cursor: 'c' + s, node: { contentOffsetSeconds: s, commenter: { displayName: 'U' + s }, message: { userColor: s % 2 ? '#FF4500' : null, fragments: [{ text: 'msg ' }, { text: String(s) }] } } })), pageInfo: { hasNextPage: from + 60 < 3000 } } } } });
       }
@@ -107,6 +112,26 @@ function net(o = {}) {
       if (q.includes('games(first')) return res({ data: { games: { edges: [1, 2, 3].map((i) => ({ cursor: 'g' + i, node: { name: 'game' + i, displayName: 'Game ' + i, boxArtURL: 'http://box/' + i, viewersCount: 500 } })) } } });
       if (q.includes('streams(first')) return res({ data: { streams: { edges: o.emptyLang && q.includes('broadcasterLanguages') ? [] : [1, 2, 3, 4, 5, 6].map(stream) } } });
       return res({ errors: [{ message: 'unmocked ' + q }] });
+    }
+    if (url.startsWith('https://7tv.io/')) {
+      if (o.emoteFail === '7tv') return res({}, 500);
+      if (url.endsWith('/emote-sets/global')) return res({ emotes: [{ id: 'GGG', name: 'Gl7', data: { animated: false } }] });
+      const j = JSON.parse(body);
+      const data = j.query.includes('userByConnection')
+        ? { userByConnection: { connections: [{ platform: 'TWITCH', emote_set_id: 'SET1' }] } }
+        : { emoteSet: { emotes: [{ id: 'AAA', name: 'catJAM', data: { animated: true } }, { id: 'BBB', name: 'Pog7', data: { animated: false } }] } };
+      // como el servidor real: tras los datos va un bloque "extensions" enorme que no hay que interpretar
+      return res(null, 200, JSON.stringify({ data }).slice(0, -1) + ',"extensions":{"tracing":{"resolvers":[' + '{"path":["x"]},'.repeat(50) + '{}]}}}');
+    }
+    if (url.startsWith('https://api.betterttv.net/')) {
+      if (o.emoteFail === 'bttv') return res({}, 500);
+      if (url.endsWith('/emotes/global')) return res([{ id: 'bg', code: 'BTglobal', modifier: false }, { id: 'bm', code: 'w!', modifier: true }]);
+      return res({ channelEmotes: [{ id: 'b1', code: 'monkaBT', modifier: false }], sharedEmotes: [{ id: 'b2', code: 'Pog7', modifier: false }] });
+    }
+    if (url.startsWith('https://api.frankerfacez.com/')) {
+      if (o.emoteFail === 'ffz') return res({}, 500);
+      if (url.endsWith('/set/global')) return res({ default_sets: [3], sets: { 3: { emoticons: [{ id: 12, name: 'ffzG' }] } } });
+      return res({ room: { set: 5 }, sets: { 5: { emoticons: [{ id: 11, name: 'ffzE' }, { id: 13, name: 'ffzH', hidden: true }] } } });
     }
     if (url.startsWith('https://usher.ttvnw.net')) return res(null, o.usher ?? 200, MASTER);
     if (url.startsWith('https://video-weaver.example')) return res(null, 200, o.media ?? '#EXTM3U\n');   // lista de medios de una calidad
@@ -456,6 +481,7 @@ function boot(o = {}) {
   let cv = J(await w.Api.channelVideos('chan1', null));
   assert.deepEqual(cv.items.map((i) => i.type), ['stream', 'video', 'video']);
   assert.equal(cv.items[1].duration, 3725);
+  assert.equal(cv.items[1].login, 'chan1', 'el vídeo sabe de qué canal es (para sus emotes)');
   assert.equal(cv.items[1].date, '2026-10-31');
   assert.equal(cv.cursor, 'v2');
   cv = J(await w.Api.channelVideos('chan1', 'v2'));
@@ -1086,7 +1112,7 @@ function boot(o = {}) {
   assert.equal(v.__t, 700, 'conserva la posición al caer a Auto');
   assert.notEqual($('pmsg').textContent, 'No se pudo reproducir');
   w.Player.key('back');
-  w.Player.open({ type: 'video', id: '904', name: 'Chan1', title: 'Siguiente', date: '', game: '', duration: 5000 }, () => {});
+  w.Player.open({ type: 'video', id: '904', login: 'chan1', name: 'Chan1', title: 'Siguiente', date: '', game: '', duration: 5000 }, () => {});
   await until(() => v.getAttribute('src'), 'src del siguiente');
   assert.match(v.getAttribute('src'), /usher\.ttvnw\.net\/vod\/904\.m3u8/, 'no vuelve a elegir la calidad que falló');
   ok('VOD: una calidad que falla vuelve a Auto sin perder la posición y no se vuelve a elegir');
@@ -1105,6 +1131,7 @@ function boot(o = {}) {
   await until(() => lastMsg() === 'msg 100', 'mensajes del chat del VOD hasta la posición 100');
   assert.match(gqlComments()[0], /contentOffsetSeconds:90,/, 'empieza 10 s antes de la posición');
   assert.equal($('cmsgs').lastChild.firstChild.textContent, 'U100:');
+  assert.equal(w.Emotes._stats().want, 'chan1', 'el chat del VOD usa los emotes del canal del vídeo');
   assert.ok($('cmsgs').children.length <= 8, 'tras el arranque solo se pintan los más recientes');
   assert.equal(t.sockets.length, 1, 'un VOD no abre WebSocket');
   await sleep(600);
@@ -1277,10 +1304,11 @@ function boot(o = {}) {
   // parseo
   const { w: pw } = boot();
   const P = (l) => J(pw.Chat.parse(l));
-  assert.deepEqual(P(line('foo', 'hola: mundo')), { n: 'foo', c: '#bf94ff', t: 'hola: mundo', a: false });
-  assert.deepEqual(P(line('foo', 'hola', 'color=#FF4500;display-name=Fo\\so;id=1')), { n: 'Fo o', c: '#FF4500', t: 'hola', a: false });
+  assert.deepEqual(P(line('foo', 'hola: mundo')), { n: 'foo', c: '#bf94ff', t: 'hola: mundo', a: false, e: '' });
+  assert.deepEqual(P(line('foo', 'hola', 'color=#FF4500;display-name=Fo\\so;id=1')), { n: 'Fo o', c: '#FF4500', t: 'hola', a: false, e: '' });
   assert.equal(P(line('foo', 'x', 'color=#0000FF')).c, '#bf94ff', 'un color ilegible sobre fondo oscuro se sustituye');
-  assert.deepEqual(P(line('foo', '\u0001ACTION baila\u0001')), { n: 'foo', c: '#bf94ff', t: 'baila', a: true });
+  assert.deepEqual(P(line('foo', '\u0001ACTION baila\u0001')), { n: 'foo', c: '#bf94ff', t: 'baila', a: true, e: '' });
+  assert.equal(P(line('foo', 'hola Kappa', 'emotes=25:5-9;id=1')).e, '25:5-9', 'la etiqueta emotes viaja con el mensaje');
   assert.equal(P(line('foo', 'a'.repeat(500))).t.length, 161);
   assert.equal(pw.Chat.parse(':tmi.twitch.tv 001 justinfan1 :Welcome'), null);
   assert.equal(pw.Chat.parse('@a=b :x PRIVMSG'), null);
@@ -1352,6 +1380,232 @@ function boot(o = {}) {
   ok('chat: al salir del directo se cierra la conexión y no reconecta');
 }
 
+/* ---------- 7b) emotes del chat ---------- */
+{
+  // Image simulada: dispara onload/onerror como un navegador (jsdom no carga imágenes) y apunta qué URLs se piden
+  const imgLog = [];
+  const fakeImage = (opts = {}) => (win) => {
+    win.Image = class {
+      constructor() { this.naturalWidth = opts.w ?? 64; this.naturalHeight = opts.h ?? 64; this._s = ''; }
+      get src() { return this._s; }
+      set src(v) {
+        this._s = v;
+        if (!v) return;
+        imgLog.push(v);
+        setTimeout(() => { if (this._s !== v) return; const f = opts.fail && opts.fail(v); const h = f ? this.onerror : this.onload; if (h) h.call(this); }, opts.delay ?? 0);
+      }
+    };
+  };
+  const EMO_HOSTS = /7tv\.io|betterttv\.net|frankerfacez\.com/;
+  const emoCalls = (t) => t.N.calls.filter((c) => EMO_HOSTS.test(c.url) || (c.url.includes('gql.twitch.tv') && /\{user\(login:"[^"]*"\)\{id\}\}/.test(String(c.opts.body))));
+  const span = (t) => t.d.createElement('span');
+  const srcs = (el) => [...el.querySelectorAll('img')].map((i) => i.getAttribute('src'));
+  // rellena y espera a que terminen las descargas simuladas (el tope de descargas simultáneas se prueba aparte)
+  const fillT = async (t, text, tag) => { const e = span(t); t.w.Emotes.fill(e, text, tag); await sleep(8); return e; };
+  const LIM_BYTES = 6 * 1024 * 1024, LIM_ITEMS = 250;
+  const TW = (id) => 'https://static-cdn.jtvnw.net/emoticons/v2/' + id + '/static/dark/2.0';
+
+  // diccionarios: 7TV por GraphQL (sin interpretar las trazas), BTTV, FFZ y globales; prioridad 7TV > BTTV > FFZ
+  let t = boot({ beforeScripts: fakeImage() });
+  let w = t.w;
+  w.Emotes.use('Chan1');
+  await t.until(() => w.Emotes._stats().chan === 4 && w.Emotes._stats().glob === 3, 'diccionarios del canal y globales');
+  assert.equal(w.Emotes._stats().want, 'chan1');
+  const urls = emoCalls(t).map((c) => c.url);
+  assert.ok(urls.includes('https://api.frankerfacez.com/v1/room/chan1'), 'FFZ por login');
+  assert.ok(urls.includes('https://api.betterttv.net/3/cached/users/twitch/777'), 'BTTV por id numérico');
+  let el = await fillT(t, 'hola catJAM Pog7 monkaBT ffzE Gl7 ffzG fin', '');
+  assert.deepEqual(srcs(el), [
+    'https://cdn.7tv.app/emote/AAA/2x_static.webp',
+    'https://cdn.7tv.app/emote/BBB/2x.webp',
+    'https://cdn.betterttv.net/emote/b1/2x.png',
+    'https://cdn.frankerfacez.com/emote/11/2',
+    'https://cdn.7tv.app/emote/GGG/2x.webp',
+    'https://cdn.frankerfacez.com/emote/12/2',
+  ], 'animados en versión estática, BTTV en png, 2x; Pog7 es de 7TV aunque BTTV también lo tenga');
+  assert.equal(el.textContent, 'hola ' + ' '.repeat(5) + ' fin', 'el resto del texto se conserva');
+  assert.equal(el.firstChild.textContent, 'hola ');
+  assert.equal(el.lastChild.textContent, ' fin');
+  assert.equal(el.querySelector('img').getAttribute('alt'), 'catJAM');
+  assert.equal(el.querySelector('img').className, 'emo');
+  el = await fillT(t, 'w! hola BTglobal ffzH', '');
+  assert.deepEqual(srcs(el), ['https://cdn.betterttv.net/emote/bg/2x.png'], 'los modificadores y los emotes ocultos de FFZ se quedan como texto');
+  el = await fillT(t, 'constructor __proto__ toString hola', '');
+  assert.equal(el.querySelectorAll('img').length, 0);
+  assert.equal(el.textContent, 'constructor __proto__ toString hola', 'las palabras que coinciden con propiedades de Object no son emotes');
+  el = await fillT(t, 'catJAM!  catJAM', '');
+  assert.equal(srcs(el).length, 1, 'solo la palabra exacta (con puntuación pegada no)');
+  ok('emotes: 7TV (GraphQL), BTTV, FFZ y globales con prioridad, URLs 2x estáticas y solo palabras exactas');
+
+  // emotes de Twitch (etiqueta del IRC, en puntos de código) y la misma etiqueta construida para los VOD
+  el = await fillT(t, 'hola Kappa', '25:5-9');
+  assert.deepEqual(srcs(el), [TW(25)]);
+  el = await fillT(t, '\u{1FAE0} Kappa \u{1FAE0} LUL', '25:2-6/425618:10-12');
+  assert.deepEqual(srcs(el), [TW(25), TW(425618)], 'los índices de Twitch cuentan puntos de código, no unidades UTF-16');
+  assert.equal(el.firstChild.textContent, '\u{1FAE0} ');
+  el = await fillT(t, 'Kappa x', '25:0-9');
+  assert.equal(srcs(el).length, 0, 'un rango que no encaja con una palabra se ignora');
+  el = await fillT(t, 'hola', '25:5-9/zz');
+  assert.equal(el.textContent, 'hola');
+  el = await fillT(t, 'x', 'a$b:0-0');
+  assert.equal(srcs(el).length, 0, 'un id con caracteres raros no genera URL');
+  const vc = J(await w.Api.vodComments('9', 7777));
+  assert.deepEqual(vc.items.map((i) => [i.m, i.e]), [['Kappa Kappa', '25:0-4/25:6-10'], ['\u{1FAE0} LUL', 'emotesv2_abc:2-4']], 'el chat del VOD trae los emotes de Twitch con el formato del IRC');
+  el = await fillT(t, vc.items[1].m, vc.items[1].e);
+  assert.deepEqual(srcs(el), [TW('emotesv2_abc')]);
+  ok('emotes: Twitch por etiqueta (puntos de código) y los del chat de un VOD');
+
+  // sin emotes que mostrar el mensaje sigue siendo texto plano (sin elementos extra)
+  el = await fillT(t, 'hola mundo sin nada', '');
+  assert.equal(el.childNodes.length, 1);
+  assert.equal(el.firstChild.nodeType, 3);
+  ok('emotes: un mensaje sin emotes es un único nodo de texto');
+
+  // caché en localStorage: se guarda el diccionario y al reabrir el canal no se vuelve a pedir nada
+  const saved = JSON.parse(w.localStorage.getItem('emo:chan1'));
+  assert.equal(Object.keys(saved.d).length, 4);
+  assert.equal(saved.d.catJAM, '8AAA');
+  assert.ok(w.localStorage.getItem('emo:*'), 'los globales se guardan aparte');
+  assert.deepEqual(JSON.parse(w.localStorage.getItem('emo.ix')), ['emo:chan1'], 'el índice solo lleva canales');
+  const t2 = boot({ beforeScripts: fakeImage(), ls: { 'emo:chan1': w.localStorage.getItem('emo:chan1'), 'emo:*': w.localStorage.getItem('emo:*'), 'emo.ix': w.localStorage.getItem('emo.ix') } });
+  t2.w.Emotes.use('chan1');
+  assert.equal(t2.w.Emotes._stats().chan, 4, 'el diccionario guardado se usa al momento');
+  await t2.until(() => t2.w.Emotes._stats().glob === 3, 'globales guardados');
+  await sleep(50);
+  assert.equal(emoCalls(t2).length, 0, 'con la caché fresca no se pide nada a la red');
+  // caducada (6 h): se vuelve a pedir
+  const old = JSON.parse(w.localStorage.getItem('emo:chan1')); old.t = Date.now() - 7 * 3600 * 1000;
+  const t3 = boot({ beforeScripts: fakeImage(), ls: { 'emo:chan1': JSON.stringify(old) } });
+  t3.w.Emotes.use('chan1');
+  await t3.until(() => t3.w.Emotes._stats().chan === 4, 'refresco de la caché caducada');
+  assert.ok(emoCalls(t3).length > 0);
+  ok('emotes: diccionarios en localStorage (6 h por canal, globales 24 h) sin volver a la red mientras valen');
+
+  // como mucho 4 canales guardados (los globales aparte)
+  const t4 = boot({ beforeScripts: fakeImage() });
+  for (const c of ['a1', 'a2', 'a3', 'a4', 'a5', 'a6']) {
+    t4.w.Emotes.use(c);
+    await t4.until(() => t4.w.localStorage.getItem('emo:' + c), 'canal ' + c);
+  }
+  assert.deepEqual(JSON.parse(t4.w.localStorage.getItem('emo.ix')), ['emo:a3', 'emo:a4', 'emo:a5', 'emo:a6']);
+  assert.equal(t4.w.localStorage.getItem('emo:a1'), null, 'el canal menos usado se borra');
+  assert.equal(t4.w.localStorage.getItem('emo:a2'), null);
+  assert.ok(t4.w.localStorage.getItem('emo:*'), 'los globales no cuentan en el cupo');
+  ok('emotes: se guardan como mucho 4 canales (se borra el menos usado)');
+
+  // un proveedor caído: se usa lo que hay pero no se guarda un diccionario incompleto
+  const tf = boot({ beforeScripts: fakeImage(), emoteFail: 'bttv' });
+  tf.w.Emotes.use('chan1');
+  await tf.until(() => tf.w.Emotes._stats().chan === 3, 'diccionario parcial');
+  await sleep(30);
+  assert.equal(tf.w.localStorage.getItem('emo:chan1'), null, 'no se guarda un diccionario incompleto');
+  assert.equal(tf.errors.length, 0);
+  ok('emotes: si un proveedor falla se usan los demás y no se cachea el resultado incompleto');
+
+  // límite de memoria: tope de bytes (imágenes grandes) y de elementos (imágenes pequeñas), expulsando la menos usada
+  imgLog.length = 0;
+  const big = boot({ beforeScripts: fakeImage({ w: 512, h: 512 }) });         // 1 MiB cada una
+  const eid = (i) => i + ':0-0';
+  for (let i = 1; i <= 10; i++) await fillT(big, 'x', eid(i));
+  let st = big.w.Emotes._stats();
+  assert.ok(st.bytes <= LIM_BYTES, 'memoria: ' + st.bytes);
+  assert.equal(st.images, 6, '6 imágenes de 1 MiB caben en 6 MiB');
+  const n0 = imgLog.length;
+  await fillT(big, 'x', eid(10));
+  assert.equal(imgLog.length, n0, 'la más reciente sigue en la caché (no se vuelve a pedir)');
+  await fillT(big, 'x', eid(1));
+  assert.equal(imgLog.length, n0 + 1, 'la más antigua fue expulsada y se vuelve a pedir');
+  st = big.w.Emotes._stats();
+  assert.ok(st.bytes <= LIM_BYTES && st.images === 6);
+  const small = boot({ beforeScripts: fakeImage() });                         // 16 KiB cada una
+  for (let i = 1; i <= 300; i++) { small.w.Emotes.fill(span(small), 'x', eid(i)); await sleep(1); }
+  await sleep(10);
+  assert.equal(small.w.Emotes._stats().images, LIM_ITEMS, 'como mucho 250 imágenes distintas en memoria');
+  assert.ok(small.w.Emotes._stats().bytes <= LIM_BYTES);
+  ok('emotes: caché de imágenes con tope de memoria (6 MiB) y de elementos (250), expulsando la menos usada');
+
+  // descargas simultáneas acotadas y tope de imágenes por mensaje
+  const slow = boot({ beforeScripts: fakeImage({ delay: 40 }) });
+  el = span(slow); slow.w.Emotes.fill(el, 'a b c d e f g h', '1:0-0/2:2-2/3:4-4/4:6-6/5:8-8/6:10-10/7:12-12/8:14-14');
+  assert.equal(srcs(el).length, 6, 'solo 6 descargas a la vez');
+  assert.equal(slow.w.Emotes._stats().pending, 6);
+  assert.ok(el.textContent.endsWith('g h'), 'sin hueco, el emote sale como texto');
+  await slow.until(() => slow.w.Emotes._stats().pending === 0, 'descargas terminadas');
+  el = span(slow); slow.w.Emotes.fill(el, 'g h', '7:0-0/8:2-2');
+  assert.equal(srcs(el).length, 2, 'con huecos libres ya salen como imagen');
+  const many = boot({ beforeScripts: fakeImage() });
+  el = span(many);
+  many.w.Emotes.fill(el, Array(15).fill('x').join(' '), Array.from({ length: 15 }, (_, i) => '1:' + i * 2 + '-' + i * 2).join('/'));
+  assert.equal(srcs(el).length, 10, 'como mucho 10 imágenes por mensaje');
+  assert.equal(many.w.Emotes._stats().images, 1, 'la misma imagen no se duplica en la caché');
+  ok('emotes: descargas simultáneas acotadas y 10 imágenes como mucho por mensaje');
+
+  // un emote que falla sale como texto y no se reintenta enseguida
+  imgLog.length = 0;
+  const fl = boot({ beforeScripts: fakeImage({ fail: (u) => u.includes('/emoticons/v2/9/') }) });
+  await fillT(fl, 'hola Rota', '9:5-8');
+  assert.equal(fl.w.Emotes._stats().images, 0, 'la imagen fallida sale de la caché');
+  el = await fillT(fl, 'hola Rota', '9:5-8');
+  assert.equal(srcs(el).length, 0, 'durante un rato no se vuelve a pedir');
+  assert.equal(el.textContent, 'hola Rota');
+  assert.equal(imgLog.filter((u) => u.includes('/9/')).length, 1);
+  el = span(slow); slow.w.Emotes.fill(el, 'Ok', '5:0-1');                      // un <img> que falla al mostrarse: vuelve el nombre
+  const im = el.querySelector('img');
+  assert.ok(im);
+  im.dispatchEvent(new slow.w.Event('error'));
+  assert.equal(el.querySelector('img'), null);
+  assert.equal(el.textContent, 'Ok');
+  ok('emotes: un emote que falla se muestra como texto y no se reintenta enseguida');
+
+  // ajuste desactivado: nada de red ni imágenes; al activarlo en caliente se cargan
+  const off = boot({ beforeScripts: fakeImage(), ls: { settings: JSON.stringify({ adblock: 'off', emotes: 'off' }) } });
+  off.w.Emotes.use('chan1');
+  el = await fillT(off, 'hola Kappa', '25:5-9');
+  assert.equal(el.textContent, 'hola Kappa');
+  assert.equal(srcs(el).length, 0);
+  await sleep(50);
+  assert.equal(emoCalls(off).length, 0, 'con los emotes apagados no se pide nada');
+  assert.equal(off.w.Emotes._stats().images, 0);
+  off.key(off.K.green);
+  for (let i = 0; i < 5; i++) off.key(off.K.down);
+  assert.match(off.d.querySelectorAll('#srows .si')[5].textContent, /Emotes en el chat.*No/);
+  off.key(off.K.left);
+  assert.equal(off.w.Settings.get('emotes'), 'on');
+  await off.until(() => off.w.Emotes._stats().chan === 4, 'al activarlos se cargan los del canal');
+  el = await fillT(off, 'hola catJAM', '');
+  assert.equal(srcs(el).length, 1);
+  off.key(off.K.right);                                                         // y al apagarlos se libera la memoria
+  assert.equal(off.w.Settings.get('emotes'), 'off');
+  assert.equal(off.w.Emotes._stats().chan, 0);
+  assert.equal(off.w.Emotes._stats().images, 0);
+  el = await fillT(off, 'hola catJAM', '');
+  assert.equal(srcs(el).length, 0);
+  ok('emotes: el ajuste los apaga (sin red, sin imágenes, memoria liberada) y se aplica en caliente');
+
+  // integración con el chat en directo: pinta los emotes y al salir libera diccionario e imágenes
+  const ct = boot({ ls: { chat: '1' }, beforeScripts: fakeImage() });
+  await ct.until(() => ct.cards().length === 6, 'inicio');
+  ct.key(ct.K.ok);
+  await ct.until(() => ct.sockets.length === 1 && ct.sockets[0].sent.length >= 4, 'conexión del chat');
+  assert.equal(ct.w.Emotes._stats().want, 'chan1', 'el chat pide los emotes del canal');
+  await ct.until(() => ct.w.Emotes._stats().chan === 4, 'diccionario del canal');
+  const lineE = (text, tags) => '@' + tags + ' :foo!foo@foo.tmi.twitch.tv PRIVMSG #chan1 :' + text;
+  ct.sockets[0].emit(lineE('hola catJAM Kappa', 'color=#FF4500;display-name=Foo;emotes=25:12-16') + '\r\n');
+  await ct.until(() => ct.$('cmsgs').children.length === 1, 'mensaje con emotes');
+  const body = ct.$('cmsgs').firstChild.lastChild;
+  assert.deepEqual([...body.querySelectorAll('img')].map((i) => i.alt), ['catJAM', 'Kappa']);
+  assert.equal(body.firstChild.textContent, 'hola ');
+  ct.sockets[0].emit(lineE('solo texto', 'color=#FF4500;display-name=Foo') + '\r\n');
+  await ct.until(() => ct.$('cmsgs').children.length === 2, 'mensaje de texto');
+  assert.equal(ct.$('cmsgs').lastChild.lastChild.textContent, 'solo texto');
+  assert.ok(ct.w.Emotes._stats().images <= LIM_ITEMS);
+  ct.key(ct.K.back);
+  assert.equal(ct.w.Emotes._stats().want, '', 'al salir se libera el canal');
+  assert.equal(ct.w.Emotes._stats().chan, 0);
+  assert.equal(ct.w.Emotes._stats().images, 0, 'y la caché de imágenes');
+  assert.equal(ct.errors.length, 0);
+  ok('chat: los emotes se pintan como imágenes y al salir se libera la memoria');
+}
 
 /* ---------- 8) navegación ---------- */
 {
@@ -1542,22 +1796,23 @@ function boot(o = {}) {
   assert.equal($('settings').hidden, false, 'Verde abre los ajustes');
   assert.equal(w.Settings.isOpen(), true);
   assert.equal($('settings').className, '', 'fuera del reproductor el panel va centrado');
-  assert.equal(rows().length, 13, '11 ajustes + créditos + restablecer');
+  assert.equal(rows().length, 14, '12 ajustes + créditos + restablecer');
   assert.match(rows()[0].textContent, /Pestaña al abrir la aplicación.*Inicio/);
   assert.match(rows()[1].textContent, /Contenido de mi país.*Automático/);
   assert.match(rows()[2].textContent, /Restaurar audio silenciado.*Sí/);
   assert.match(rows()[3].textContent, /Bloquear anuncios.*Sí/, 'el bloqueo de anuncios viene activado de serie');
   assert.match(rows()[4].textContent, /Tipo de reproductor.*Twitch Web \(defecto\)/);
-  assert.match(rows()[5].textContent, /Tamaño de la letra del chat.*Normal/);
-  assert.match(rows()[6].textContent, /Ancho del chat.*25%/);
-  assert.match(rows()[7].textContent, /Alto del chat.*100%/);
-  assert.match(rows()[8].textContent, /Posición del chat.*Arriba derecha/);
-  assert.match(rows()[9].textContent, /Opacidad.*90%/);
-  for (let i = 0; i < 8; i++) key(K.down);                    // las flechas no mueven la cuadrícula de detrás
+  assert.match(rows()[5].textContent, /Emotes en el chat.*Sí/, 'los emotes vienen activados de serie');
+  assert.match(rows()[6].textContent, /Tamaño de la letra del chat.*Normal/);
+  assert.match(rows()[7].textContent, /Ancho del chat.*25%/);
+  assert.match(rows()[8].textContent, /Alto del chat.*100%/);
+  assert.match(rows()[9].textContent, /Posición del chat.*Arriba derecha/);
+  assert.match(rows()[10].textContent, /Opacidad.*90%/);
+  for (let i = 0; i < 9; i++) key(K.down);                    // las flechas no mueven la cuadrícula de detrás
   assert.equal(focused().getAttribute('data-i'), '0');
   key(K.ok);                                                  // OK en la posición: siguiente valor
   assert.equal(w.Settings.get('pos'), 'bl');
-  for (let i = 0; i < 8; i++) key(K.up);
+  for (let i = 0; i < 9; i++) key(K.up);
   key(K.ok);                                                  // OK en la pestaña inicial: siguiente valor
   assert.equal(w.Settings.get('tab'), 'games');
   assert.equal(stored().tab, 'games', 'se guarda al momento');
@@ -1568,16 +1823,16 @@ function boot(o = {}) {
 
   // límites con ◀ ▶ (no dan la vuelta) y restablecer
   key(K.green);
-  for (let i = 0; i < 9; i++) key(K.down);                    // opacidad
+  for (let i = 0; i < 10; i++) key(K.down);                    // opacidad
   for (let i = 0; i < 15; i++) key(K.left);
   assert.equal(w.Settings.get('op'), 0, 'la opacidad no baja de 0');
   for (let i = 0; i < 15; i++) key(K.right);
   assert.equal(w.Settings.get('op'), 100);
   key(K.down); key(K.right);                                  // ocultar panel tras
   assert.equal(w.Settings.hideMs(), 6000);
-  key(K.down); key(K.down); assert.match(rows()[12].textContent, /Restablecer/);   // antes pasa por Créditos
+  key(K.down); key(K.down); assert.match(rows()[13].textContent, /Restablecer/);   // antes pasa por Créditos
   key(K.ok);
-  assert.deepEqual(stored(), { tab: 'streams', cfilter: 'auto', unmute: 'on', adblock: 'on', usher: 'twitchweb', fs: 'm', size: 25, height: 100, pos: 'tr', op: 90, hide: 4 }, 'restablecer vuelve a los valores de serie');
+  assert.deepEqual(stored(), { tab: 'streams', cfilter: 'auto', unmute: 'on', adblock: 'on', usher: 'twitchweb', emotes: 'on', fs: 'm', size: 25, height: 100, pos: 'tr', op: 90, hide: 4 }, 'restablecer vuelve a los valores de serie');
   key(K.back);
   assert.equal($('settings').hidden, true, 'Atrás cierra');
   ok('ajustes: límites de ◀ ▶ y restablecer valores por defecto');
@@ -1627,7 +1882,7 @@ function boot(o = {}) {
   assert.equal(w.Player.isOpen(), true, 'Atrás cierra solo los ajustes');
   assert.equal($('settings').hidden, true);
   key(K.green);
-  for (let i = 0; i < 6; i++) key(K.down);                    // tamaño (tras pestaña, contenido, audio, anuncios, usher y letra)
+  for (let i = 0; i < 7; i++) key(K.down);                    // tamaño (tras pestaña, contenido, audio, anuncios, usher, emotes y letra)
   key(K.left);
   assert.equal($('chat').style.width, '20vw', 'un paso = 5 %'); assert.equal($('chat').style.height, '100%');
   assert.equal($('ovl').style.right, '20vw');
@@ -1656,7 +1911,7 @@ function boot(o = {}) {
   key(K.back);
   key(K.green);
   assert.equal($('settings').className, 'pl ar', 'con el chat a la izquierda el panel va a la derecha');
-  for (let i = 0; i < 12; i++) key(K.down);                   // restablecer (tras Créditos): el alto vuelve al 100 %
+  for (let i = 0; i < 13; i++) key(K.down);                   // restablecer (tras Créditos): el alto vuelve al 100 %
   key(K.ok);
   assert.equal(w.Settings.get('height'), 100);
   assert.equal($('chat').style.height, '100%', 'restablecer devuelve el alto al 100 %');
@@ -1695,9 +1950,9 @@ function boot(o = {}) {
   const rows = () => [...d.querySelectorAll('#srows .si')];
   await until(() => cards().length === 6, 'inicio (créditos)');
   key(K.green);
-  for (let i = 0; i < 11; i++) key(K.down);                   // las 11 filas de ajustes → Créditos
-  assert.match(rows()[11].textContent, /Créditos/);
-  assert.ok(rows()[11].classList.contains('on'), 'la fila Créditos queda enfocada');
+  for (let i = 0; i < 12; i++) key(K.down);                   // las 12 filas de ajustes → Créditos
+  assert.match(rows()[12].textContent, /Créditos/);
+  assert.ok(rows()[12].classList.contains('on'), 'la fila Créditos queda enfocada');
   key(K.ok);
   assert.equal($('credits').hidden, false, 'OK abre los créditos');
   assert.equal(w.Credits.isOpen(), true);
@@ -1708,7 +1963,7 @@ function boot(o = {}) {
   assert.equal($('cqr').innerHTML, qrHtml(w, w.CONFIG.CREDITS.url));
   key(K.down); key(K.green);                                  // mientras se ven, el mando no llega a los ajustes
   assert.equal($('settings').hidden, false, 'Verde no cierra los ajustes desde los créditos');
-  assert.ok(rows()[11].classList.contains('on'), 'Abajo no movió la selección de Ajustes');
+  assert.ok(rows()[12].classList.contains('on'), 'Abajo no movió la selección de Ajustes');
   key(K.back);
   assert.equal($('credits').hidden, true, 'Atrás cierra los créditos');
   assert.equal($('settings').hidden, false, 'y vuelve a Ajustes');
@@ -1724,7 +1979,7 @@ function boot(o = {}) {
   t2.w.CONFIG.CREDITS.donate = DON;
   await t2.until(() => t2.cards().length === 6, 'inicio (donar)');
   t2.key(t2.K.green);
-  for (let i = 0; i < 11; i++) t2.key(t2.K.down);
+  for (let i = 0; i < 12; i++) t2.key(t2.K.down);
   t2.key(t2.K.ok);
   assert.equal(t2.$('cqrtxt').textContent, 'Escanea para apoyar el proyecto con una donación', 'con donaciones: texto de donar');
   assert.equal(t2.$('cqr').innerHTML, qrHtml(t2.w, DON), 'con donaciones: el QR apunta a la URL de donar');
@@ -1735,8 +1990,8 @@ function boot(o = {}) {
   const en = boot({ lang: 'en' });
   await en.until(() => en.cards().length === 6, 'inicio (créditos en inglés)');
   en.key(en.K.green);
-  for (let i = 0; i < 11; i++) en.key(en.K.down);
-  assert.match(en.d.querySelectorAll('#srows .si')[11].textContent, /Credits/);
+  for (let i = 0; i < 12; i++) en.key(en.K.down);
+  assert.match(en.d.querySelectorAll('#srows .si')[12].textContent, /Credits/);
   en.key(en.K.ok);
   assert.equal(en.$('ctitle').textContent, 'Credits');
   assert.equal(en.$('cmade').textContent, 'Made by adamff-dev');

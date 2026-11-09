@@ -65,6 +65,7 @@ html,body{margin:0;height:100%;background:#0e0e10;color:#efeff1;overflow:hidden;
 .cm{padding:.25vw 0;word-wrap:break-word;text-shadow:0 0 .3vw #000,0 0 .3vw #000}
 .cm b{margin-right:.4vw}
 .cm .me{font-style:italic}
+.cm .emo{height:1.45em;width:auto;max-width:6em;vertical-align:middle;margin:-.3em .1em}
 #cst{position:absolute;top:.8vw;left:.8vw;color:#adadb8}
 /* posición, tamaño, letra y opacidad del chat (y los huecos que deja en el panel) los pone player.js con los ajustes */
 /* ajustes (botón Verde). .pl = sobre el reproductor: fondo casi transparente para ver el chat; .al/.ar = pegado a un lado */

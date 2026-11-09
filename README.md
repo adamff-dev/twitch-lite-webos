@@ -113,6 +113,7 @@ Press **Green** to open the settings. ▲ ▼ move between rows, ◀ ▶ change 
 - **Block ads**: *Yes* (the default) or *No*. See the **Ads** paragraphs above.
 - **Player type (usher)**: *Twitch Web* (the default), *HTML5*, *Web* or *Site*. Changing it, or Block ads, reloads the live stream you are watching.
 - **Chat**:
+  - emotes: *Yes* (the default) or *No*. See [Emotes](#emotes);
   - text size (4 levels);
   - width (5–100 % of the screen, in steps of 5);
   - height (5–100 % of the screen, in steps of 5; 100 % by default). The chat stays anchored to the top or bottom edge, depending on the position;
@@ -131,8 +132,19 @@ Turn it on with Down during a live stream. The preference is remembered. It is d
 - a single WebSocket connection, **open only while the chat is visible**;
 - **30 fixed DOM nodes that are recycled** (no elements are created or destroyed at runtime);
 - at most **4 repaints per second** and 8 messages per repaint: during bursts, older messages are dropped;
-- no images (emotes appear as text), messages up to 160 characters, and an overlay panel (the video is not resized);
+- emotes as small static images with a bounded memory budget (see below), messages up to 160 characters, and an overlay panel (the video is not resized);
 - disconnects when you leave the stream or when the app goes to the background.
+
+### Emotes
+
+Twitch, 7TV, BetterTTV and FrankerFaceZ emotes (channel and global ones) are shown as images in the chat, on live streams and in VOD replays. It is on by default (**Settings > Chat > Emotes**) and built so it does not pile up on a TV with little RAM:
+
+- **static, small images only**: 2x size, animated 7TV emotes in their `_static.webp` version and BetterTTV ones as `.png` (their animated `.webp` can weigh megabytes), Twitch ones with the `static` format;
+- **in-memory image cache with a hard limit**: at most **6 MiB** of decoded pixels (width × height × 4) and 250 distinct images; when it is full, the least recently used one is evicted and its bitmap released. The whole cache is emptied when you leave the stream, hide the chat or turn the setting off;
+- **bounded downloads**: at most 6 images downloading at once (an emote that does not fit shows as text and as an image the next time), at most 10 images per message, a failed emote shows as text and is not retried for a minute;
+- **compact dictionaries**: name → short code (never URLs or API objects), at most 3000 entries per channel. 7TV is queried through GraphQL asking only for id, name and animated flag, and the bulky `extensions` block of the response is discarded before parsing;
+- **cached on the TV** (`localStorage`): channel dictionaries for 6 h and global ones for 24 h, up to 4 channels (the least recently used is deleted), so reopening a channel loads instantly without asking the network. A dictionary is not stored if any provider failed, so it is retried next time;
+- if the setting is off, nothing is requested and no image is created.
 
 ## Development
 
@@ -153,6 +165,7 @@ The app targets webOS 4 and later (Chromium 53), so the code avoids `async/await
 - `app/js/points.js`: automatic channel points claim (private GraphQL, needs the TV client)
 - `app/js/qr.js`: our own QR generator (checked with OpenCV, see `tools/qr-check`)
 - `app/js/chat.js`: optimized read-only chat (live IRC, and the synchronized replay for VODs)
+- `app/js/emotes.js`: chat emotes (Twitch, 7TV, BTTV, FFZ) with a bounded image cache and cached dictionaries
 - `app/js/ads.js`: detects ads in the live playlist (the player mutes the audio during them)
 - `app/js/adblock.js`: optional ad blocking: hls.js playlist loader that removes ad segments from live streams
 - `app/js/resume.js`: VOD resume position (local and, when available, from Twitch)

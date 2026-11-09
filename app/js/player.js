@@ -80,7 +80,7 @@
   function applyChat() { el.classList[Chat.isOn() && isOpen ? 'add' : 'remove']('chat'); layoutChat(); }
   // Directo: chat en vivo (IRC). VOD: el chat de la emisión original, sincronizado con la posición del vídeo.
   function attachChat() {
-    if (isVod) Chat.attachVod(item.id, function () { return v.currentTime; });
+    if (isVod) Chat.attachVod(item.id, function () { return v.currentTime; }, item.login);
     else Chat.attach(item.login);
   }
   function startChat() { if (isOpen && item) attachChat(); applyChat(); }
