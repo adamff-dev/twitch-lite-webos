@@ -429,6 +429,16 @@
     Notify.start(isVod ? '' : it.login);               // aviso de directos de canales seguidos (en un VOD se avisa de todos)
   }
 
+  // Pasa a otro contenido sin salir del reproductor (el aviso de directos): cierra lo actual (guarda la posición, para chat, puntos,
+  // anuncios...) sin llamar a onClose, para que al salir el foco vuelva donde estaba antes de abrir el reproductor.
+  function goTo(it) {
+    if (!isOpen) return;
+    var cb = onClose;
+    onClose = null;
+    close();
+    open(it, cb);
+  }
+
   /* ---------- saltos acelerados (VOD) ----------
      Cada pulsación rápida (<700 ms desde la anterior) sube un escalón: 10, 10, 30, 30, 60, 60, 120, 120, 300 s.
      El salto real se aplica una sola vez, 450 ms después de la última pulsación (los seeks HLS son caros en TVs modestas). */
@@ -629,5 +639,5 @@
     }
   });
 
-  w.Player = { open: open, key: key, isOpen: function () { return isOpen; }, chatShown: function () { return el.classList.contains('chat'); } };
+  w.Player = { open: open, goTo: goTo, key: key, atTop: function () { return !ovl.hidden && (!isVod || cur === bar); }, isOpen: function () { return isOpen; }, chatShown: function () { return el.classList.contains('chat'); } };
 })(window);

@@ -251,14 +251,14 @@
 
   /* ---------- mando ---------- */
   var KEYS = { 37: 'left', 38: 'up', 39: 'right', 40: 'down', 13: 'ok', 461: 'back', 27: 'back', 8: 'back',
-    415: 'play', 19: 'pause', 413: 'stop', 179: 'playpause', 412: 'rw', 417: 'ff', 403: 'refresh', 404: 'green', 405: 'channel',
+    415: 'play', 19: 'pause', 413: 'stop', 179: 'playpause', 412: 'rw', 417: 'ff', 403: 'refresh', 404: 'green', 405: 'channel', 406: 'blue',
     33: 'pgup', 34: 'pgdn', 427: 'pgup', 428: 'pgdn',
     49: 't0', 50: 't1', 51: 't2', 52: 't3', 53: 't4', 54: 't5' };
 
   document.addEventListener('keydown', function (e) {
     var k = KEYS[e.keyCode];
     if (!k) return;
-    if (e.repeat && (k === 'ok' || k === 'back' || k === 'channel' || k === 'refresh' || k === 'green')) { e.preventDefault(); return; }   // pulsación mantenida
+    if (e.repeat && (k === 'ok' || k === 'back' || k === 'channel' || k === 'refresh' || k === 'green' || k === 'blue')) { e.preventDefault(); return; }   // pulsación mantenida
     if (document.activeElement === qin) {               // escribiendo en el cuadro de búsqueda
       if (k === 'ok') { qin.blur(); doSearch(); e.preventDefault(); }
       else if (k === 'back' && e.keyCode !== 8) { qin.blur(); e.preventDefault(); }
@@ -269,6 +269,7 @@
     if (Settings.isOpen()) { Settings.key(k); return; }
     if (Login.isOpen()) { Login.key(k); return; }
     if (k === 'green') { Settings.open(Player.chatShown() ? Settings.freeSide() : ''); return; }   // ajustes (sobre el reproductor se aparta del chat)
+    if (Player.isOpen() && Notify.key(k)) return;        // aviso de directo a la vista: Amarillo (ver) / Azul (cerrar)
     if (Player.isOpen()) { Player.key(k); return; }
     if (k === 'ok') { if (foc) activate(foc); }
     else if (k === 'back') back();

@@ -1328,6 +1328,7 @@ function boot(o = {}) {
   const setup = (o = {}) => {
     const st = { live: ['chan1'], timers: [], cleared: 0 };
     const t = boot({ ...o, beforeScripts: (w) => {
+      if (o.pre) o.pre(w);
       const si = w.setInterval.bind(w), ci = w.clearInterval.bind(w);
       w.setInterval = (fn, ms) => { if (ms >= 120000) { st.timers.push({ fn, ms }); return 900 + st.timers.length; } return si(fn, ms); };
       w.clearInterval = (id) => { if (id >= 900) st.cleared++; else ci(id); };
@@ -1401,11 +1402,143 @@ function boot(o = {}) {
   assert.equal(st.timers.length, 0, 'sin sesión no hay nada en marcha');
   t.key(t.K.back);
   ok('aviso de directos: respeta el ajuste (apagado, intervalo) y no hace nada sin sesión');
+
+  // sonido, tiempo en pantalla, clic (ir), × y teclas de colores (Amarillo = ver, Azul = cerrar)
+  const beeps = [];
+  const withAudio = (w) => {
+    w.AudioContext = class {
+      constructor() { this.currentTime = 0; this.destination = {}; this.osc = 0; this.closed = false; beeps.push(this); }
+      createOscillator() { this.osc++; return { frequency: {}, connect() {}, start() {}, stop() {} }; }
+      createGain() { return { gain: { setValueAtTime() {}, exponentialRampToValueAtTime() {} }, connect() {} }; }
+      close() { this.closed = true; }
+    };
+  };
+  ({ t, st } = setup({ ls: session, pre: withAudio }));
+  seen = 0;
+  const f4 = t.w.fetch; t.w.fetch = (u, op) => { if (String(u).startsWith(LIVE)) seen++; return f4(u, op); };
+  let closed = 0;
+  t.w.Player.open({ type: 'video', id: '980', login: 'chan9', name: 'Chan9', title: 'VOD', date: '', game: '', duration: 5000 }, () => { closed++; });
+  await t.until(() => seen === 1, 'línea base');
+  await sleep(30);
+  const fire = async (login) => {
+    st.live = [...st.live, login];
+    st.timers[st.timers.length - 1].fn();
+    await t.until(() => !t.$('live').hidden, 'aviso de ' + login);
+  };
+  await fire('uno');
+  assert.equal(t.$('lname').textContent, 'UNO');
+  assert.equal(beeps.length, 1, 'suena al salir el aviso');
+  assert.equal(beeps[0].osc, 2, 'un pitido de dos notas');
+  await sleep(950);
+  assert.equal(beeps[0].closed, true, 'y el audio se cierra al acabar');
+  assert.equal(t.$('lgo').textContent, 'Ver');
+  assert.equal(t.$('lcl').textContent, 'Cerrar');
+  t.key(406);                                                  // Azul: cerrar
+  assert.equal(t.$('live').hidden, true, 'Azul cierra el aviso');
+  assert.equal(t.w.Player.isOpen(), true, 'sin salir del reproductor');
+  assert.equal(closed, 0);
+  await sleep(450);
+  await fire('dos');
+  t.$('lx').click();                                           // la × con el puntero
+  assert.equal(t.$('live').hidden, true, 'la × cierra el aviso');
+  await sleep(450);
+  const n0 = seen;
+  await fire('tres');
+  t.$('lname').click();                                        // clic en el aviso: ir al directo
+  assert.equal(t.$('live').hidden, true);
+  assert.match(t.$('oname').textContent, /TRES/, 'el reproductor pasa al directo del aviso');
+  assert.equal(t.$('obar').hidden, true, 'ya no es un VOD (sin barra de progreso)');
+  assert.equal(closed, 0, 'cambiar de contenido no cuenta como salir del reproductor');
+  await t.until(() => seen === n0 + 2, 'línea base del nuevo directo');
+  await sleep(30);
+  await fire('cuatro');
+  t.key(405);                                                  // Amarillo: ver
+  assert.match(t.$('oname').textContent, /CUATRO/, 'Amarillo abre el directo del aviso');
+  assert.equal(t.$('live').hidden, true);
+  t.key(t.K.back);
+  assert.equal(closed, 1, 'al salir vuelve el foco como si se hubiera abierto una sola vez');
+  assert.equal(t.w.Player.isOpen(), false);
+  ok('aviso de directos: suena, se cierra con Azul o la ×, y un clic o Amarillo pasa al directo');
+
+  // foco con las flechas: Arriba (desde lo más alto del panel) entra al aviso, ◀ ▶ eligen, OK pulsa, ▼ o Atrás vuelven
+  ({ t, st } = setup({ ls: session }));
+  seen = 0;
+  const f6 = t.w.fetch; t.w.fetch = (u, op) => { if (String(u).startsWith(LIVE)) seen++; return f6(u, op); };
+  closed = 0;
+  t.w.Player.open({ type: 'video', id: '982', login: 'chan9', name: 'Chan9', title: 'VOD', date: '', game: '', duration: 5000 }, () => { closed++; });
+  await t.until(() => seen === 1, 'línea base');
+  await sleep(30);
+  const fire2 = async (login) => {
+    st.live = [...st.live, login];
+    st.timers[st.timers.length - 1].fn();
+    await t.until(() => !t.$('live').hidden, 'aviso de ' + login);
+  };
+  const lf = () => [t.$('lgo'), t.$('lcl')].map((e) => e.classList.contains('foc'));
+  await fire2('uno');
+  assert.deepEqual(lf(), [false, false], 'al salir el aviso no tiene el foco');
+  t.key(t.K.up);                                               // en un VOD la primera sube a la barra de progreso
+  assert.deepEqual(lf(), [false, false]);
+  assert.equal(t.$('obar').classList.contains('foc'), true);
+  t.key(t.K.up);                                               // la segunda ya es del aviso
+  assert.deepEqual(lf(), [true, false], 'Arriba desde la barra lleva el foco a "Ver"');
+  assert.equal(t.$('player').classList.contains('nf'), true, 'el panel atenúa su foco');
+  t.key(t.K.right);
+  assert.deepEqual(lf(), [false, true], '▶ pasa a "Cerrar"');
+  t.key(t.K.right);
+  assert.deepEqual(lf(), [false, true], 'no da la vuelta');
+  t.key(t.K.left);
+  assert.deepEqual(lf(), [true, false]);
+  t.key(t.K.down);
+  assert.deepEqual(lf(), [false, false], 'Abajo devuelve el foco al reproductor');
+  assert.equal(t.$('player').classList.contains('nf'), false);
+  assert.equal(t.$('live').hidden, false, 'el aviso sigue a la vista');
+  t.key(t.K.up);                                               // otra vez al aviso
+  t.key(t.K.back);
+  assert.deepEqual(lf(), [false, false], 'Atrás solo devuelve el foco');
+  assert.equal(t.w.Player.isOpen(), true, 'sin salir del reproductor');
+  t.key(t.K.up);
+  t.key(t.K.right);
+  t.key(t.K.ok);                                               // OK en "Cerrar"
+  assert.equal(t.$('live').hidden, true, 'OK en Cerrar cierra el aviso');
+  assert.equal(t.$('player').classList.contains('nf'), false, 'y el foco vuelve al panel');
+  await sleep(450);
+  await fire2('dos');
+  t.key(t.K.up);                                               // la barra de progreso conserva el foco: sube directo al aviso
+  assert.deepEqual(lf(), [true, false]);
+  t.key(t.K.ok);                                               // OK en "Ver"
+  assert.match(t.$('oname').textContent, /DOS/, 'OK en Ver pasa al directo');
+  assert.equal(t.$('obar').hidden, true);
+  assert.equal(closed, 0);
+  await t.until(() => seen >= 3, 'línea base del nuevo directo');
+  await sleep(30);
+  await fire2('tres');                                         // en un directo basta una pulsación de Arriba con el panel a la vista
+  t.key(t.K.up);
+  assert.deepEqual(lf(), [true, false], 'en un directo Arriba entra directamente');
+  t.key(t.K.back);
+  t.key(t.K.back);
+  assert.equal(closed, 1, 'el segundo Atrás sí sale del reproductor');
+  ok('aviso de directos: se puede mover el foco con las flechas (Arriba entra, ◀ ▶ eligen, OK pulsa, Abajo o Atrás vuelven)');
+
+  // sin sonido (ajuste) no se crea ningún audio; sin aviso a la vista los colores siguen siendo del reproductor
+  beeps.length = 0;
+  ({ t, st } = setup({ ls: { ...session, settings: JSON.stringify({ adblock: 'off', liveSound: 'off' }) }, pre: withAudio }));
+  seen = 0;
+  const f5 = t.w.fetch; t.w.fetch = (u, op) => { if (String(u).startsWith(LIVE)) seen++; return f5(u, op); };
+  t.w.Player.open({ type: 'video', id: '981', login: 'chan9', name: 'Chan9', title: 'VOD', date: '', game: '', duration: 5000 }, () => {});
+  await t.until(() => seen === 1, 'línea base');
+  await sleep(30);
+  st.live = ['chan1', 'nuevo'];
+  st.timers[st.timers.length - 1].fn();
+  await t.until(() => !t.$('live').hidden, 'aviso sin sonido');
+  assert.equal(beeps.length, 0, 'con el sonido apagado no hay audio');
+  t.key(t.K.back);
+  t.key(406);                                                  // sin aviso ni reproductor: no pasa nada
+  ok('aviso de directos: con el sonido apagado no se crea ningún audio');
 }
 
 /* ---------- 6e) ajustes: el panel no se sale de la pantalla (barra de desplazamiento visual) ---------- */
 {
-  // jsdom no hace layout: se simula un área de 300 px con 16 filas de 50 px (800 px de contenido)
+  // jsdom no hace layout: se simula un área de 300 px con 17 filas de 50 px (850 px de contenido)
   let t = boot();
   assert.equal(t.$('swrap').scrollHeight, 0);
   t.key(t.K.green);
@@ -1416,24 +1549,25 @@ function boot(o = {}) {
   const w = t.w, wrap = t.$('swrap');
   let st = 0;
   Object.defineProperty(wrap, 'clientHeight', { get: () => 300 });
-  Object.defineProperty(wrap, 'scrollHeight', { get: () => 800 });
-  Object.defineProperty(wrap, 'scrollTop', { get: () => st, set: (x) => { st = Math.max(0, Math.min(500, x)); } });
+  Object.defineProperty(wrap, 'scrollHeight', { get: () => 850 });
+  Object.defineProperty(wrap, 'scrollTop', { get: () => st, set: (x) => { st = Math.max(0, Math.min(550, x)); } });
   Object.defineProperty(w.HTMLElement.prototype, 'offsetTop', { get() { return this.classList.contains('si') ? [...this.parentNode.children].indexOf(this) * 50 : 0; }, configurable: true });
   Object.defineProperty(w.HTMLElement.prototype, 'offsetHeight', { get() { return this.classList.contains('si') ? 50 : 0; }, configurable: true });
   const thumb = () => ({ h: parseFloat(t.$('sthumb').style.height), top: parseFloat(t.$('sthumb').style.top) });
   t.key(t.K.green);
   assert.equal(t.$('sbar').hidden, false, 'si no cabe se ve la barra');
   assert.equal(t.$('sbar').style.height, '300px', 'la barra mide lo que el área de filas');
-  assert.deepEqual(thumb(), { h: 112.5, top: 0 }, 'arriba: el tirador está al principio');
+  const th = 300 * 300 / 850, near = (a, b) => Math.abs(a - b) < 0.01;
+  assert.ok(near(thumb().h, th) && thumb().top === 0, 'arriba: el tirador está al principio');
   for (let i = 0; i < 5; i++) t.key(t.K.down);
   assert.equal(st, 0, 'las filas visibles no desplazan');
   for (let i = 0; i < 3; i++) t.key(t.K.down);                 // fila 8: su borde inferior (450) pasa de 300
   assert.equal(st, 150);
-  assert.equal(thumb().top, 56.25, 'el tirador baja con la selección');
-  for (let i = 0; i < 7; i++) t.key(t.K.down);                 // Restablecer (fila 15)
-  assert.equal(st, 500, 'la última fila queda a la vista');
-  assert.equal(thumb().top, 187.5, 'abajo: el tirador llega al final de la barra');
-  for (let i = 0; i < 15; i++) t.key(t.K.up);
+  assert.ok(near(thumb().top, 150 / 550 * (300 - th)), 'el tirador baja con la selección');
+  for (let i = 0; i < 8; i++) t.key(t.K.down);                 // Restablecer (fila 16)
+  assert.equal(st, 550, 'la última fila queda a la vista');
+  assert.ok(near(thumb().top, 300 - th), 'abajo: el tirador llega al final de la barra');
+  for (let i = 0; i < 16; i++) t.key(t.K.up);
   assert.equal(st, 0, 'al volver a la primera fila se sube del todo');
   assert.equal(thumb().top, 0);
   t.key(t.K.green);
@@ -1710,8 +1844,8 @@ function boot(o = {}) {
   assert.equal(emoCalls(off).length, 0, 'con los emotes apagados no se pide nada');
   assert.equal(off.w.Emotes._stats().images, 0);
   off.key(off.K.green);
-  for (let i = 0; i < 7; i++) off.key(off.K.down);
-  assert.match(off.d.querySelectorAll('#srows .si')[7].textContent, /Emotes en el chat.*No/);
+  for (let i = 0; i < 8; i++) off.key(off.K.down);
+  assert.match(off.d.querySelectorAll('#srows .si')[8].textContent, /Emotes en el chat.*No/);
   off.key(off.K.left);
   assert.equal(off.w.Settings.get('emotes'), 'on');
   await off.until(() => off.w.Emotes._stats().chan === 4, 'al activarlos se cargan los del canal');
@@ -1939,7 +2073,7 @@ function boot(o = {}) {
   assert.equal($('settings').hidden, false, 'Verde abre los ajustes');
   assert.equal(w.Settings.isOpen(), true);
   assert.equal($('settings').className, '', 'fuera del reproductor el panel va centrado');
-  assert.equal(rows().length, 16, '14 ajustes + créditos + restablecer');
+  assert.equal(rows().length, 17, '15 ajustes + créditos + restablecer');
   assert.match(rows()[0].textContent, /Pestaña al abrir la aplicación.*Inicio/);
   assert.match(rows()[1].textContent, /Contenido de mi país.*Automático/);
   assert.match(rows()[2].textContent, /Restaurar audio silenciado.*Sí/);
@@ -1947,17 +2081,18 @@ function boot(o = {}) {
   assert.match(rows()[4].textContent, /Tipo de reproductor.*Twitch Web \(defecto\)/);
   assert.match(rows()[5].textContent, /Avisar de directos que sigo.*Sí/, 'el aviso de directos viene activado de serie');
   assert.match(rows()[6].textContent, /Comprobar directos cada.*2 min/);
-  assert.match(rows()[7].textContent, /Emotes en el chat.*Sí/, 'los emotes vienen activados de serie');
-  assert.match(rows()[8].textContent, /Tamaño de la letra del chat.*Normal/);
-  assert.match(rows()[9].textContent, /Ancho del chat.*25%/);
-  assert.match(rows()[10].textContent, /Alto del chat.*100%/);
-  assert.match(rows()[11].textContent, /Posición del chat.*Arriba derecha/);
-  assert.match(rows()[12].textContent, /Opacidad.*90%/);
-  for (let i = 0; i < 11; i++) key(K.down);                    // las flechas no mueven la cuadrícula de detrás
+  assert.match(rows()[7].textContent, /Sonido del aviso de directo.*Sí/, 'el sonido del aviso viene activado de serie');
+  assert.match(rows()[8].textContent, /Emotes en el chat.*Sí/, 'los emotes vienen activados de serie');
+  assert.match(rows()[9].textContent, /Tamaño de la letra del chat.*Normal/);
+  assert.match(rows()[10].textContent, /Ancho del chat.*25%/);
+  assert.match(rows()[11].textContent, /Alto del chat.*100%/);
+  assert.match(rows()[12].textContent, /Posición del chat.*Arriba derecha/);
+  assert.match(rows()[13].textContent, /Opacidad.*90%/);
+  for (let i = 0; i < 12; i++) key(K.down);                    // las flechas no mueven la cuadrícula de detrás
   assert.equal(focused().getAttribute('data-i'), '0');
   key(K.ok);                                                  // OK en la posición: siguiente valor
   assert.equal(w.Settings.get('pos'), 'bl');
-  for (let i = 0; i < 11; i++) key(K.up);
+  for (let i = 0; i < 12; i++) key(K.up);
   key(K.ok);                                                  // OK en la pestaña inicial: siguiente valor
   assert.equal(w.Settings.get('tab'), 'games');
   assert.equal(stored().tab, 'games', 'se guarda al momento');
@@ -1968,16 +2103,16 @@ function boot(o = {}) {
 
   // límites con ◀ ▶ (no dan la vuelta) y restablecer
   key(K.green);
-  for (let i = 0; i < 12; i++) key(K.down);                    // opacidad
+  for (let i = 0; i < 13; i++) key(K.down);                    // opacidad
   for (let i = 0; i < 15; i++) key(K.left);
   assert.equal(w.Settings.get('op'), 0, 'la opacidad no baja de 0');
   for (let i = 0; i < 15; i++) key(K.right);
   assert.equal(w.Settings.get('op'), 100);
   key(K.down); key(K.right);                                  // ocultar panel tras
   assert.equal(w.Settings.hideMs(), 6000);
-  key(K.down); key(K.down); assert.match(rows()[15].textContent, /Restablecer/);   // antes pasa por Créditos
+  key(K.down); key(K.down); assert.match(rows()[16].textContent, /Restablecer/);   // antes pasa por Créditos
   key(K.ok);
-  assert.deepEqual(stored(), { tab: 'streams', cfilter: 'auto', unmute: 'on', adblock: 'on', usher: 'twitchweb', live: 'on', liveEvery: 2, emotes: 'on', fs: 'm', size: 25, height: 100, pos: 'tr', op: 90, hide: 4 }, 'restablecer vuelve a los valores de serie');
+  assert.deepEqual(stored(), { tab: 'streams', cfilter: 'auto', unmute: 'on', adblock: 'on', usher: 'twitchweb', live: 'on', liveEvery: 2, liveSound: 'on', emotes: 'on', fs: 'm', size: 25, height: 100, pos: 'tr', op: 90, hide: 4 }, 'restablecer vuelve a los valores de serie');
   key(K.back);
   assert.equal($('settings').hidden, true, 'Atrás cierra');
   ok('ajustes: límites de ◀ ▶ y restablecer valores por defecto');
@@ -2027,7 +2162,7 @@ function boot(o = {}) {
   assert.equal(w.Player.isOpen(), true, 'Atrás cierra solo los ajustes');
   assert.equal($('settings').hidden, true);
   key(K.green);
-  for (let i = 0; i < 9; i++) key(K.down);                    // tamaño (tras pestaña, contenido, audio, anuncios, usher, avisos (2), emotes y letra)
+  for (let i = 0; i < 10; i++) key(K.down);                    // tamaño (tras pestaña, contenido, audio, anuncios, usher, avisos (3), emotes y letra)
   key(K.left);
   assert.equal($('chat').style.width, '20vw', 'un paso = 5 %'); assert.equal($('chat').style.height, '100%');
   assert.equal($('ovl').style.right, '20vw');
@@ -2056,7 +2191,7 @@ function boot(o = {}) {
   key(K.back);
   key(K.green);
   assert.equal($('settings').className, 'pl ar', 'con el chat a la izquierda el panel va a la derecha');
-  for (let i = 0; i < 15; i++) key(K.down);                   // restablecer (tras Créditos): el alto vuelve al 100 %
+  for (let i = 0; i < 16; i++) key(K.down);                   // restablecer (tras Créditos): el alto vuelve al 100 %
   key(K.ok);
   assert.equal(w.Settings.get('height'), 100);
   assert.equal($('chat').style.height, '100%', 'restablecer devuelve el alto al 100 %');
@@ -2095,9 +2230,9 @@ function boot(o = {}) {
   const rows = () => [...d.querySelectorAll('#srows .si')];
   await until(() => cards().length === 6, 'inicio (créditos)');
   key(K.green);
-  for (let i = 0; i < 14; i++) key(K.down);                   // las 14 filas de ajustes → Créditos
-  assert.match(rows()[14].textContent, /Créditos/);
-  assert.ok(rows()[14].classList.contains('on'), 'la fila Créditos queda enfocada');
+  for (let i = 0; i < 15; i++) key(K.down);                   // las 15 filas de ajustes → Créditos
+  assert.match(rows()[15].textContent, /Créditos/);
+  assert.ok(rows()[15].classList.contains('on'), 'la fila Créditos queda enfocada');
   key(K.ok);
   assert.equal($('credits').hidden, false, 'OK abre los créditos');
   assert.equal(w.Credits.isOpen(), true);
@@ -2108,7 +2243,7 @@ function boot(o = {}) {
   assert.equal($('cqr').innerHTML, qrHtml(w, w.CONFIG.CREDITS.url));
   key(K.down); key(K.green);                                  // mientras se ven, el mando no llega a los ajustes
   assert.equal($('settings').hidden, false, 'Verde no cierra los ajustes desde los créditos');
-  assert.ok(rows()[14].classList.contains('on'), 'Abajo no movió la selección de Ajustes');
+  assert.ok(rows()[15].classList.contains('on'), 'Abajo no movió la selección de Ajustes');
   key(K.back);
   assert.equal($('credits').hidden, true, 'Atrás cierra los créditos');
   assert.equal($('settings').hidden, false, 'y vuelve a Ajustes');
@@ -2124,7 +2259,7 @@ function boot(o = {}) {
   t2.w.CONFIG.CREDITS.donate = DON;
   await t2.until(() => t2.cards().length === 6, 'inicio (donar)');
   t2.key(t2.K.green);
-  for (let i = 0; i < 14; i++) t2.key(t2.K.down);
+  for (let i = 0; i < 15; i++) t2.key(t2.K.down);
   t2.key(t2.K.ok);
   assert.equal(t2.$('cqrtxt').textContent, 'Escanea para apoyar el proyecto con una donación', 'con donaciones: texto de donar');
   assert.equal(t2.$('cqr').innerHTML, qrHtml(t2.w, DON), 'con donaciones: el QR apunta a la URL de donar');
@@ -2135,8 +2270,8 @@ function boot(o = {}) {
   const en = boot({ lang: 'en' });
   await en.until(() => en.cards().length === 6, 'inicio (créditos en inglés)');
   en.key(en.K.green);
-  for (let i = 0; i < 14; i++) en.key(en.K.down);
-  assert.match(en.d.querySelectorAll('#srows .si')[14].textContent, /Credits/);
+  for (let i = 0; i < 15; i++) en.key(en.K.down);
+  assert.match(en.d.querySelectorAll('#srows .si')[15].textContent, /Credits/);
   en.key(en.K.ok);
   assert.equal(en.$('ctitle').textContent, 'Credits');
   assert.equal(en.$('cmade').textContent, 'Made by adamff-dev');

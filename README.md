@@ -32,7 +32,7 @@ Twitch Lite lets you watch Twitch on an LG TV without the heavy official app, an
 
 **Your account (optional)**
 - Sign in by scanning a QR code with your phone: no typing on the remote. Then you get **Following**, your followed channels' videos, and channel points collected automatically while you watch (this uses Twitch's private API; see below).
-- **Live alerts**: while you watch a video or a live stream, a small message with the channel's picture tells you when another channel you follow goes live. It is on by default, you can turn it off or choose how often it checks in the settings, and it is built to cost almost nothing (see [Live alerts](#live-alerts)).
+- **Live alerts**: while you watch a video or a live stream, a small message with the channel's picture (and a short beep) tells you when another channel you follow goes live, and you can jump to it or dismiss it. It is on by default, you can turn it off, mute the beep or choose how often it checks in the settings, and it is built to cost almost nothing (see [Live alerts](#live-alerts)).
 
 **Light on purpose**
 - It starts quickly, loads only what it needs, and keeps memory use low, so it works well on TVs with little RAM.
@@ -121,6 +121,8 @@ The buttons are **◀ 10 s · Pause/Play · 10 s ▶** (VOD only), **Quality**, 
 | OK | Press the focused button. With the panel hidden, pauses or resumes |
 | ◀ ▶ on the progress bar (VOD) | Skip ±10 s. **Press repeatedly to skip further**: 10, 10, 30, 30, 60, 60, 120, 120, 300 s. One seek is applied when you stop pressing |
 | Back | Closes the quality menu; otherwise exits the player |
+| Yellow / Blue | While a [live alert](#live-alerts) is on screen: watch that channel / dismiss the alert |
+| ▲ at the top of the panel | While a live alert is on screen: move the focus to it. Then ◀ ▶ choose Watch or Close, OK presses, ▼ or Back returns to the player |
 | Play / Pause / Stop / ⏪ ⏩ | Media keys keep working (⏪ ⏩ skip at least 30 s) |
 
 The Magic Remote pointer works too: moving it shows the panel, and you can click buttons and qualities.
@@ -136,7 +138,7 @@ On a live stream, resuming after a pause of more than 2 s jumps to the live edge
 
 ## Live alerts
 
-When you are signed in and watching something (a VOD or a live stream), the app tells you when **another channel you follow starts streaming**: a small box in the top-left corner with the channel's round picture, its name and the game, for 6 seconds. Several channels that go live together are shown one after another (up to 3 per check). It is informational only: it does not take the focus or change what you are watching.
+When you are signed in and watching something (a VOD or a live stream), the app tells you when **another channel you follow starts streaming**: a small box in the top-left corner with the channel's round picture, its name and the game, for 30 seconds, with a short beep so you do not miss it. Several channels that go live together are shown one after another (up to 3 per check). It does not take the focus or interrupt what you are watching, but you can act on it: click it with the Magic Remote pointer (or press **Yellow**) to switch to that live stream, and use the **×** (or press **Blue**) to dismiss it. With the arrow keys, press **Up** from the top of the player panel to move the focus to the alert, choose **Watch** or **Close** with ◀ ▶ and press OK; **Down** or Back gives the focus back to the player.
 
 - It only runs **while the player is open and you are signed in**. On the menus nothing runs, and when the app goes to the background it stops asking.
 - When you open the player it takes a first list of who is live, **without alerting**: channels that were already live do not count. Only the ones that appear afterwards do. The channel you are watching is never announced.
@@ -155,6 +157,7 @@ Press **Green** to open the settings. ▲ ▼ move between rows (the list scroll
 - **Player type (usher)**: *Twitch Web* (the default), *HTML5*, *Web* or *Site*. Changing it, or Block ads, reloads the live stream you are watching.
 - **Alert me when followed channels go live**: *Yes* (the default) or *No*. See [Live alerts](#live-alerts).
 - **Check for live channels every**: 1, 2 (the default), 5 or 10 min.
+- **Live alert sound**: *Yes* (the default) or *No*. A short two-note beep made with Web Audio (no audio files); the audio context is created when the alert appears and closed right after.
 - **Chat**:
   - emotes: *Yes* (the default) or *No*. See [Emotes](#emotes);
   - text size (4 levels);

@@ -17,6 +17,7 @@
     { k: 'usher', def: 'twitchweb', vals: ['twitchweb', 'html5', 'web', 'site'], tr: true },
     { k: 'live', def: 'on', vals: ['on', 'off'], tr: true },             // aviso de directos de canales seguidos (notify.js)
     { k: 'liveEvery', def: 2, vals: [1, 2, 5, 10], unit: ' min' },       // cada cuánto se comprueba
+    { k: 'liveSound', def: 'on', vals: ['on', 'off'], tr: true },        // pitido al salir el aviso
     { k: 'emotes', def: 'on', vals: ['on', 'off'], tr: true },            // emotes del chat (Twitch, 7TV, BTTV, FFZ)
     { k: 'fs', def: 'm', vals: ['s', 'm', 'l', 'xl'], tr: true },
     { k: 'size', def: 25, vals: range(5, 100, 5), unit: '%' },
