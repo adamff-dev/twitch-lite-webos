@@ -179,7 +179,7 @@ function boot(o = {}) {
   const P = w.HTMLMediaElement.prototype;
   P.load = () => {};
   Object.defineProperty(P, 'paused', { get() { return this.__p !== false; }, configurable: true });
-  Object.defineProperty(P, 'currentTime', { get() { return this.__t || 0; }, set(x) { this.__t = x; this.__seeks = (this.__seeks || 0) + 1; }, configurable: true });
+  Object.defineProperty(P, 'currentTime', { get() { return this.__t || 0; }, set(x) { this.__seeks = (this.__seeks || 0) + 1; if (!this.__noSeek) this.__t = x; }, configurable: true });
   Object.defineProperty(P, 'duration', { get() { return this.__d ?? NaN; }, configurable: true });
   // rangos seekables: v.__live = borde en vivo de un directo; sin __live no hay rangos (VOD o directo sin datos)
   Object.defineProperty(P, 'seekable', { get() { const el = this; return el.__live === undefined ? { length: 0 } : { length: 1, start() { return 0; }, end() { return el.__live; } }; }, configurable: true });
@@ -1242,6 +1242,28 @@ function boot(o = {}) {
   v.__t = 5; t.key(t.K.back);
   assert.equal(t.w.Resume._local('950').pos, 0, 'menos de 15 s no se guarda (sigue como terminado)');
   ok('reanudar VOD (local): se guarda al salir, se retoma, y se olvida al terminarlo o con menos de 15 s');
+
+  // webOS descarta el salto en loadedmetadata (duration=Infinity): se reintenta y, mientras tanto, no se pisa la posición guardada
+  v = await reopen(t, '952');
+  v.__d = 5000; v.__t = 300; t.key(t.K.back);
+  t.w.Player.open(vod('952', 5000), () => {});
+  await t.until(() => t.$('v').getAttribute('src'), 'src del VOD 952');
+  v = t.$('v'); v.__t = 0; v.__d = Infinity; v.__noSeek = true;
+  await t.until(() => /Continúas por 5:00/.test(t.$('ptoast').textContent), 'aviso de reanudado');
+  v.dispatchEvent(new t.w.Event('loadedmetadata'));
+  assert.equal(v.__t, 0, 'el reproductor descartó el salto');
+  v.__t = 20; v.dispatchEvent(new t.w.Event('timeupdate'));
+  assert.equal(t.w.Resume._local('952').pos, 300, 'con el salto pendiente no se pisa la posición guardada');
+  v.__t = 0; v.__noSeek = false; v.__d = 5000;
+  v.dispatchEvent(new t.w.Event('durationchange'));
+  assert.equal(v.__t, 300, 'al conocer la duración se reintenta y se aplica');
+  v.dispatchEvent(new t.w.Event('canplay'));
+  const n = v.__seeks;
+  v.dispatchEvent(new t.w.Event('playing'));
+  assert.equal(v.__seeks, n, 'una vez aplicado no se vuelve a saltar');
+  t.key(t.K.back);
+  v.__t = 0;                                                 // el 'pause' asíncrono de la apertura siguiente no debe ver este 300
+  ok('reanudar VOD: reintenta el salto si el reproductor lo descarta y no pisa la posición guardada');
 
   // se guarda también durante la reproducción (cada 15 s) y al pausar
   v = await reopen(t, '951');

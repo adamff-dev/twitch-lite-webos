@@ -154,11 +154,17 @@
   /* ---------- carga ---------- */
   // Al cambiar el flujo (calidad, reintento) la lista HLS nueva empieza en 0: se vuelve a la posición guardada
   // en cuanto el reproductor conoce la duración (loadedmetadata; canplay de respaldo).
+  // El reproductor nativo de webOS en loadedmetadata aún da duration=Infinity y descarta el salto (currentTime se queda en 0):
+  // resumeAt solo se borra cuando currentTime confirma que el salto se aplicó; si no, se reintenta en los siguientes eventos
+  // del vídeo (durationchange, canplay, playing...). Mientras esté pendiente savePos no guarda, así que un salto perdido no
+  // pisa la posición buena con un 0.
+  var resumeTry = 0, RESUME_TRIES = 6;
   function applyResume() {
     if (!resumeAt) return;
     var t = resumeAt;
-    resumeAt = 0;
+    if (resumeTry++ >= RESUME_TRIES) { resumeAt = 0; return; }       // no hay manera: se reproduce desde donde esté
     try { v.currentTime = t; } catch (e) {}
+    if (v.currentTime >= t - 3) resumeAt = 0;                        // el reproductor aceptó el salto
     updTime();
   }
 
@@ -397,7 +403,8 @@
     qm.innerHTML = h;
   }
 
-  function keepPosition() { if (isVod && v.getAttribute('src') && v.currentTime > 1) resumeAt = v.currentTime; }
+  // Un salto de reanudado aún sin aplicar manda sobre currentTime (que sería el 0 de antes del salto)
+  function keepPosition() { if (isVod && !resumeAt && v.getAttribute('src') && v.currentTime > 1) resumeAt = v.currentTime; }
 
   function resetSeek() { clearTimeout(seekT); seekTarget = null; seekStreak = 0; }
 
@@ -502,7 +509,7 @@
 
   function pick(i) {
     qi = i; store('tq', quals[qi].name);
-    if (isVod) resumeAt = seekTarget !== null ? seekTarget : v.currentTime;   // no perder la posición al cambiar de calidad
+    if (isVod) resumeAt = seekTarget !== null ? seekTarget : (resumeAt || v.currentTime);   // no perder la posición al cambiar de calidad
     resetSeek();
     menu = false; qm.hidden = true; say(I18n.t('loading')); play();
   }
@@ -577,8 +584,8 @@
   v.addEventListener('waiting', function () { if (isOpen) { say(I18n.t('loading')); stallWatch(); } });
   v.addEventListener('stalled', stallWatch);
   v.addEventListener('timeupdate', function () { updTime(); savePos(false); });
-  v.addEventListener('loadedmetadata', applyResume);
-  v.addEventListener('canplay', applyResume);
+  v.addEventListener('loadstart', function () { resumeTry = 0; });      // flujo nuevo (calidad, hls.js, reintento): intentos de salto de cero
+  ['loadedmetadata', 'durationchange', 'canplay', 'playing', 'seeked'].forEach(function (e) { v.addEventListener(e, applyResume); });
   // Con src quitado (stop() al cerrar o al pasar a segundo plano) la pausa no cuenta: no es del usuario.
   v.addEventListener('pause', function () {
     if (isOpen && v.getAttribute('src')) { if (!isVod && !pausedAt) pausedAt = Date.now(); savePos(true); renderState(); showOvl(); }
