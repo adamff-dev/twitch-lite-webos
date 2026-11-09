@@ -1574,6 +1574,52 @@ function boot(o = {}) {
   ok('ajustes: el área de filas se desplaza con la selección y la barra muestra por dónde vas');
 }
 
+/* ---------- 6f) elegir una pestaña la recarga ---------- */
+{
+  const t = boot();
+  await t.until(() => t.cards().length === 6, 'inicio');
+  const gql = (re) => t.N.calls.filter((c) => c.url.includes('gql') && re.test(String(c.opts.body))).length;
+  const home = () => gql(/streams\(first/), games = () => gql(/games\(first/);
+  assert.equal(home(), 1, 'al arrancar se carga Inicio una vez');
+  t.focusTab('streams'); t.key(t.K.ok);                        // OK en la pestaña ya activa
+  await t.until(() => home() === 2, 'Inicio se recarga al volver a elegirlo');
+  await t.until(() => t.cards().length === 6, 'tarjetas de Inicio');
+  t.focusTab('games'); t.key(t.K.ok);                          // primera vez en Categorías
+  await t.until(() => games() === 1 && t.cards().length === 3, 'Categorías');
+  for (let i = 0; i < 4 && !t.focused().classList.contains('tab'); i++) t.key(t.K.up);
+  t.key(t.K.left);                                             // de Categorías a Inicio con las flechas
+  assert.equal(t.focused().getAttribute('data-tab'), 'streams');
+  t.key(t.K.ok);                                               // volver a una pestaña ya vista: también recarga
+  await t.until(() => home() === 3, 'Inicio se recarga tras visitar otra pestaña');
+  await t.until(() => t.cards().length === 6, 'tarjetas de Inicio (2)');
+  t.key(50);                                                   // tecla 2 = Categorías: igual que elegirla
+  await t.until(() => games() === 2 && t.cards().length === 3, 'Categorías se recarga con el número');
+  const hold = (code) => {                                     // pulsación mantenida: llegan keydown con repeat=true
+    const ev = new t.w.KeyboardEvent('keydown', { keyCode: code, repeat: true, bubbles: true, cancelable: true });
+    if (ev.keyCode !== code) Object.defineProperty(ev, 'keyCode', { value: code });
+    t.d.dispatchEvent(ev);
+  };
+  const g2 = games();
+  hold(50); hold(50); hold(50);
+  await sleep(40);
+  assert.equal(games(), g2, 'mantener pulsado un número no recarga a cada repetición');
+  t.key(50);
+  await t.until(() => games() === g2 + 1, 'una pulsación sí');
+  await t.until(() => t.cards().length === 3, 'Categorías (repetición)');
+  t.key(t.K.back); t.key(t.K.back);                            // Atrás hacia Inicio también recarga
+  await t.until(() => home() === 4, 'Inicio se recarga con Atrás');
+  await t.until(() => t.cards().length === 6, 'Inicio con Atrás');
+  // salir de una vista anidada (canal, categoría) sí recupera la anterior tal cual
+  t.focusTab('games'); t.key(t.K.ok);
+  await t.until(() => games() === g2 + 2 && t.cards().length === 3, 'Categorías (3)');
+  t.key(t.K.ok);                                               // abre la primera categoría
+  await t.until(() => t.d.getElementById('crumb').textContent !== '', 'dentro de una categoría');
+  const g3 = games(); t.key(t.K.back);
+  await t.until(() => t.d.getElementById('crumb').textContent === '' && t.cards().length === 3, 'de vuelta a Categorías');
+  assert.equal(games(), g3, 'Atrás desde una categoría no vuelve a pedir la lista');
+  ok('pestañas: entrar en una (OK, número o Atrás hacia Inicio) la recarga siempre; salir de una categoría recupera la lista');
+}
+
 /* ---------- 7) chat optimizado ---------- */
 {
   const line = (name, text, tags = '') => `${tags ? '@' + tags + ' ' : ''}:${name}!${name}@${name}.tmi.twitch.tv PRIVMSG #chan1 :${text}`;
@@ -1934,6 +1980,7 @@ function boot(o = {}) {
   key(51);
   key(K.back);
   assert.equal(d_on(), 'Inicio', 'Atrás desde otra pestaña vuelve a Inicio');
+  await until(() => cards().length === 6, 'Inicio recargado al volver');   // Atrás hacia Inicio lo recarga y el foco pasa a su primera tarjeta
   key(K.back);                                                 // en Inicio con el foco en la cuadrícula: a las pestañas
   assert.equal(focused().getAttribute('data-tab'), 'streams');
   assert.equal($('atoast').hidden, true);

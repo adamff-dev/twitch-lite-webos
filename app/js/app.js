@@ -170,6 +170,13 @@
     showView(views[name]);
   }
 
+  // Entrar en una pestaña (OK, número o Atrás hacia Inicio) la vuelve a cargar siempre: no se reutiliza lo que hubiera cargado antes.
+  // Solo Atrás desde una vista anidada (canal, categoría) recupera la anterior tal cual, con su posición.
+  function refreshTab(name) {
+    views[name] = null;
+    switchTab(name);
+  }
+
   function push(v) {
     view.scroll = content.scrollTop;
     stack.push(view);
@@ -223,7 +230,7 @@
     if (tab) {
       if (tab === 'search') { qin.focus(); return; }     // abre el teclado en pantalla
       if (tab === 'account') { Login.open(onAuthChange); return; }
-      switchTab(tab);
+      refreshTab(tab);
       return;
     }
     var it = itemOf(el);
@@ -242,7 +249,7 @@
   function back() {
     if (stack.length) { showView(stack.pop()); return; }
     if (foc && grid.contains(foc)) { setFocus(activeTab()); return; }
-    if (view.tab !== 'streams') { switchTab('streams'); return; }
+    if (view.tab !== 'streams') { refreshTab('streams'); return; }   // volver a Inicio también lo recarga
     var now = Date.now();
     if (now - lastBack < 2500) { try { window.close(); } catch (e) {} return; }
     lastBack = now;
@@ -258,7 +265,7 @@
   document.addEventListener('keydown', function (e) {
     var k = KEYS[e.keyCode];
     if (!k) return;
-    if (e.repeat && (k === 'ok' || k === 'back' || k === 'channel' || k === 'refresh' || k === 'green' || k === 'blue')) { e.preventDefault(); return; }   // pulsación mantenida
+    if (e.repeat && (k === 'ok' || k === 'back' || k === 'channel' || k === 'refresh' || k === 'green' || k === 'blue' || (k.length === 2 && k.charAt(0) === 't'))) { e.preventDefault(); return; }   // pulsación mantenida (los números recargan: no a cada repetición)
     if (document.activeElement === qin) {               // escribiendo en el cuadro de búsqueda
       if (k === 'ok') { qin.blur(); doSearch(); e.preventDefault(); }
       else if (k === 'back' && e.keyCode !== 8) { qin.blur(); e.preventDefault(); }
@@ -273,7 +280,7 @@
     if (Player.isOpen()) { Player.key(k); return; }
     if (k === 'ok') { if (foc) activate(foc); }
     else if (k === 'back') back();
-    else if (k === 'refresh') { var t = view.tab; views[t] = null; switchTab(t); }
+    else if (k === 'refresh') refreshTab(view.tab);
     else if (k === 'channel') {                          // amarillo: ver los vídeos del canal de la tarjeta
       var it = foc && foc.getAttribute('data-i') !== null ? itemOf(foc) : null;
       if (it && it.type === 'stream') openChannel(it.login, it.name);
@@ -283,7 +290,7 @@
       var name = TABS[+k.charAt(1)];
       if (name === 'search') setFocus(qin);
       else if (name === 'account') activate(acct);
-      else switchTab(name);
+      else refreshTab(name);
     }
     else if (k === 'left' || k === 'right' || k === 'up' || k === 'down') move(k);
   });
