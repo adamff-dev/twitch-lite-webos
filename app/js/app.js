@@ -157,7 +157,7 @@
       if (view !== v) return;
       appendItems(r.items, start);
       say(v.items.length ? '' : emptyText(v) || I18n.t('empty.noResults'));
-      if (first && v.items.length) setFocus(grid.children[0]);
+      if (first && v.items.length) setFocus(grid.children[Math.min(v.focus, v.items.length - 1)]);
     }, function (e) {
       loading = false;
       if (view === v && !v.items.length) say(I18n.t('error.retry', { msg: e.message }));
@@ -175,6 +175,14 @@
   function refreshTab(name) {
     views[name] = null;
     switchTab(name);
+  }
+
+  // Vuelve a pedir la vista actual (mismo origen) conservando la posición del foco; al llegar los datos el foco queda en esa tarjeta.
+  function reloadView() {
+    var v = view;
+    if (!v || !v.fetch) { setFocus(grid.children[v ? v.focus : 0] || activeTab()); return; }
+    v.items = []; v.cursor = null; v.done = false; v.scroll = 0;
+    showView(v);
   }
 
   function push(v) {
@@ -241,7 +249,10 @@
       openChannel(it.login, it.name);
     } else {                                              // stream | video
       view.scroll = content.scrollTop;
-      Player.open(it, function () { setFocus(grid.children[view.focus] || activeTab()); });
+      Player.open(it, function (last) {
+        if (last && last.type === 'stream') reloadView();   // las listas de directos cambian mientras ves uno: se vuelven a pedir
+        else setFocus(grid.children[view.focus] || activeTab());
+      });
     }
   }
 

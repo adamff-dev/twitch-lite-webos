@@ -1633,6 +1633,33 @@ function boot(o = {}) {
   ok('pestañas: entrar en una (OK, número o Atrás hacia Inicio) la recarga siempre; salir de una categoría recupera la lista');
 }
 
+/* ---------- 6g) avisos con la lista de Siguiendo vieja y recarga al volver de un directo ---------- */
+{
+  const TV = 'ue6666qo983tsx6so1t0vnawi233wa';
+  const session = { tauth: JSON.stringify({ access: 'acc1', refresh: 'r', userId: '42', login: 'demo_user', cid: TV }) };
+  const LIVE = 'https://api.twitch.tv/helix/streams/followed';
+  const vod = (id) => ({ type: 'video', id, login: 'chan9', name: 'Chan9', title: 'VOD', date: '', game: '', duration: 5000 });
+
+  let t;
+
+  // volver de un directo recarga la lista de la que venías (y deja el foco donde estaba); de un VOD no
+  t = boot({ ls: session });
+  await t.until(() => t.cards().length === 6, 'inicio');
+  t.key(51);                                                   // Siguiendo
+  const feed = () => t.N.calls.filter((c) => c.url.includes('streams/followed') && c.url.includes('first=24')).length;
+  await t.until(() => feed() === 1 && t.cards().length === 2, 'Siguiendo');
+  t.key(t.K.right);                                            // segunda tarjeta
+  assert.equal(t.focused().getAttribute('data-i'), '1');
+  t.key(t.K.ok);                                               // abre el directo
+  await t.until(() => t.$('v').getAttribute('src'), 'directo');
+  t.key(t.K.back);
+  await t.until(() => feed() === 2, 'Siguiendo se recarga al volver del directo');
+  await t.until(() => t.cards().length === 2, 'tarjetas recargadas');
+  assert.equal(t.focused().getAttribute('data-i'), '1', 'el foco vuelve a la misma posición');
+  assert.equal(t.w.Player.isOpen(), false);
+  ok('al volver de un directo se recarga la lista de la que venías, con el foco en el mismo sitio');
+}
+
 /* ---------- 7) chat optimizado ---------- */
 {
   const line = (name, text, tags = '') => `${tags ? '@' + tags + ' ' : ''}:${name}!${name}@${name}.tmi.twitch.tv PRIVMSG #chan1 :${text}`;

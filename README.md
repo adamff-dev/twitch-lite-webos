@@ -13,7 +13,7 @@ Twitch Lite lets you watch Twitch on an LG TV without the heavy official app, an
 **Find something to watch**
 - **Home** shows the most-watched live streams, **Categories** lets you browse by game, and **Search** finds any channel.
 - Content is shown in your TV's language (you can switch it to everything in the settings), and the interface is in English or Spanish.
-- Number keys on the remote jump straight to each tab. **Entering a tab always reloads it** (OK on the tab, its number key, or Back to Home), whether you had opened it before or not, so you always get fresh content. Only going back out of a channel or a category brings back the previous list as you left it.
+- Number keys on the remote jump straight to each tab. **Entering a tab always reloads it** (OK on the tab, its number key, or Back to Home), whether you had opened it before or not, so you always get fresh content. Going back from a **live stream** reloads the list you came from (Following, Home or a category), keeping the focus on the same position. Going back out of a VOD, a channel or a category brings back the previous list as you left it.
 
 **Watch live streams and past broadcasts**
 - Live streams and videos (VODs) play in the quality you choose, with simple on-screen buttons and Magic Remote support.

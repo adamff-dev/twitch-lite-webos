@@ -414,8 +414,9 @@
     Points.stop(); Chat.detach(); applyChat(); stopAds(); Notify.stop();
     stop(); say(''); st.hidden = true; toast.hidden = true;
     el.hidden = true; qm.hidden = true; ovl.hidden = true;
+    var last = item;
     item = null; quals = [];
-    if (onClose) onClose();
+    if (onClose) onClose(last);
   }
 
   function open(it, cb) {
