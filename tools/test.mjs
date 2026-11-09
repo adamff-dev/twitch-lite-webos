@@ -1532,6 +1532,22 @@ function boot(o = {}) {
   assert.equal(closed, 1, 'el segundo Atrás sí sale del reproductor');
   ok('aviso de directos: se puede mover el foco con las flechas (Arriba entra, ◀ ▶ eligen, OK pulsa, Abajo o Atrás vuelven)');
 
+  // al pasar a otro canal desde un aviso la lista se conserva: lo que empezó justo antes del salto también avisa
+  ({ t, st } = setup({ ls: session }));
+  seen = 0;
+  const f7 = t.w.fetch; t.w.fetch = (u, op) => { if (String(u).startsWith(LIVE)) seen++; return f7(u, op); };
+  t.w.Player.open({ type: 'video', id: '983', login: 'chan9', name: 'Chan9', title: 'VOD', date: '', game: '', duration: 5000 }, () => {});
+  await t.until(() => seen === 1, 'línea base');
+  await sleep(30);
+  await fire('uno');
+  st.live = [...st.live, 'dos'];                               // empieza dos antes del siguiente sondeo
+  t.key(405);                                                  // Amarillo: ver uno
+  assert.match(t.$('oname').textContent, /UNO/);
+  await t.until(() => !t.$('live').hidden, 'aviso de lo que empezó justo antes del salto');
+  assert.equal(t.$('lname').textContent, 'DOS', 'el salto no vuelve a tomar la lista de cero');
+  t.key(t.K.back); t.key(t.K.back);
+  ok('aviso de directos: al pasar a otro canal desde un aviso no se pierde lo que empezó justo antes');
+
   // sin sonido (ajuste) no se crea ningún audio; sin aviso a la vista los colores siguen siendo del reproductor
   beeps.length = 0;
   ({ t, st } = setup({ ls: { ...session, settings: JSON.stringify({ adblock: 'off', liveSound: 'off' }) }, pre: withAudio }));
@@ -1640,7 +1656,23 @@ function boot(o = {}) {
   const LIVE = 'https://api.twitch.tv/helix/streams/followed';
   const vod = (id) => ({ type: 'video', id, login: 'chan9', name: 'Chan9', title: 'VOD', date: '', game: '', duration: 5000 });
 
-  let t;
+  // solo avisa de lo que EMPIEZA mientras ves algo: lo que ya estaba en directo al abrir (esté o no en Siguiendo) no avisa
+  let t = boot({ ls: session });
+  let live = ['chan1', 'chan2'];
+  const f0 = t.w.fetch;
+  t.w.fetch = (u, op) => String(u).startsWith(LIVE) ? Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ data: live.map((l, i) => ({ user_id: String(i + 1), user_login: l, user_name: l.toUpperCase(), game_name: 'Juego', title: '', viewer_count: 1, thumbnail_url: '' })), pagination: {} }) }) : f0(u, op);
+  await t.w.Auth.followedStreams(null);                        // Siguiendo muestra chan1 y chan2
+  live = ['chan1', 'chan2', 'illo'];                            // illo ya estaba en directo cuando abres el reproductor
+  t.w.Player.open(vod('990'), () => {});
+  await sleep(80);
+  assert.equal(t.$('live').hidden, true, 'lo que ya estaba en directo al abrir no avisa');
+  t.key(t.K.back);
+  live = ['chan1', 'chan2', 'illo', 'otro'];                    // otro empieza con el reproductor cerrado
+  t.w.Player.open(vod('991'), () => {});
+  await sleep(80);
+  assert.equal(t.$('live').hidden, true, 'lo que empezó fuera del reproductor tampoco avisa al abrirlo');
+  t.key(t.K.back);
+  ok('aviso de directos: lo que ya estaba en directo al abrir el reproductor no avisa (esté o no en Siguiendo)');
 
   // volver de un directo recarga la lista de la que venías (y deja el foco donde estaba); de un VOD no
   t = boot({ ls: session });

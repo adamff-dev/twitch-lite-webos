@@ -5,7 +5,9 @@
      ni si la anterior sigue en vuelo;
    - la foto se pide solo cuando hay que avisar, a 70 px, y se suelta al ocultar el mensaje;
    - no guarda nada en disco: la lista de "ya en directo" se toma al abrir el reproductor y vive solo en memoria.
-   Al abrir el reproductor se toma una primera lista (sin avisar): los canales que ya estaban en directo no cuentan.
+   Solo se avisa de lo que EMPIEZA mientras ves algo: al abrir el reproductor se toma una primera lista (sin avisar) y los canales
+   que ya estaban en directo no cuentan, estuvieran o no en la pestaña Siguiendo. Al pasar a otro canal desde un aviso (goTo) la
+   lista se conserva, para no perder lo que empezó justo entonces.
    El aviso dura SHOW_MS, suena un pitido corto (WebAudio, sin ficheros; Ajustes > Sonido del aviso) y se puede pulsar: con el
    puntero del mando un clic en el aviso abre el directo y la × lo cierra; con los botones de colores, Amarillo = ver y Azul = cerrar;
    y con las flechas: Arriba (desde lo más alto del panel del reproductor) lleva el foco al aviso, ◀ ▶ eligen Ver o Cerrar, OK pulsa y
@@ -17,6 +19,7 @@
   var SHOW_MS = 30000, GAP_MS = 400, MAX_PER_POLL = 3, IMG_WAIT = 3000;
   var watching = false, skip = '', known = null, timer = 0, busy = false, gen = 0;
   var queue = [], showing = false, hideT = 0, cur = null;
+  var held = false;
   var foc = -1, playerEl = $('player');                         // foco del mando en el aviso: -1 ninguno, 0 Ver, 1 Cerrar
 
   function setFoc(i) {
@@ -116,8 +119,9 @@
       if (id !== gen) return;
       var cur = {}, fresh = [];
       list.forEach(function (s) {
-        cur[s.login] = 1;
-        if (known && !known[s.login] && s.login.toLowerCase() !== skip) fresh.push(s);
+        var lg = s.login.toLowerCase();
+        cur[lg] = 1;
+        if (known && !known[lg] && lg !== skip) fresh.push(s);
       });
       known = cur;
       fresh.slice(0, MAX_PER_POLL).forEach(function (s) { queue.push(s); });
@@ -135,11 +139,16 @@
   // login: el canal del directo que se está viendo (no se avisa de él); '' en un VOD.
   function start(login) {
     stop();
+    held = false;
     watching = true; skip = String(login || '').toLowerCase();
     schedule();
+    tick();                                                       // al abrir: primera lista (la base) o, tras un goTo, comparación ya
   }
+  // Player.goTo: se sigue viendo, solo cambia el canal; la lista de lo ya en directo no se vuelve a tomar de cero
+  function hold() { held = true; }
   function stop() {
-    watching = false; gen++; busy = false; known = null; queue = [];
+    watching = false; gen++; busy = false; queue = [];
+    if (!held) known = null;
     clearInterval(timer); timer = 0;
     hide();
   }
@@ -151,5 +160,5 @@
     schedule();
   });
 
-  w.Notify = { start: start, stop: stop, key: key };
+  w.Notify = { start: start, stop: stop, hold: hold, key: key };
 })(window);

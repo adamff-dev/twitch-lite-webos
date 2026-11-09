@@ -436,6 +436,7 @@
     if (!isOpen) return;
     var cb = onClose;
     onClose = null;
+    Notify.hold();                                      // sigue viendo: el aviso no vuelve a tomar la lista de cero
     close();
     open(it, cb);
   }
