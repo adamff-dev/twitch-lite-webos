@@ -1,24 +1,54 @@
 # Twitch Lite for webOS
 
-A lightweight Twitch client for LG webOS TVs. No frameworks: a single `index.html` of about 100 KB, native `<video>` for HLS (with an optional on-demand hls.js for muted VODs), and a chat built for modest hardware.
+A lightweight Twitch client for LG webOS TVs. No frameworks: a single `index.html` of about 130 KB, native `<video>` for HLS (with hls.js loaded on demand for ad blocking and muted VODs), and a chat built for modest hardware.
 
 ![Twitch Lite home screen on an LG webOS TV](docs/screenshot-home.png)
 
 > **Unofficial.** Twitch Lite is an independent project. It is not made by, endorsed by or affiliated with Twitch Interactive, Inc.
 
+## What it does
+
+Twitch Lite lets you watch Twitch on an LG TV without the heavy official app, and it stays smooth even on entry-level sets.
+
+**Find something to watch**
+- **Home** shows the most-watched live streams, **Categories** lets you browse by game, and **Search** finds any channel.
+- Content is shown in your TV's language (you can switch it to everything in the settings), and the interface is in English or Spanish.
+- Number keys on the remote jump straight to each tab.
+
+**Watch live streams and past broadcasts**
+- Live streams and videos (VODs) play in the quality you choose, with simple on-screen buttons and Magic Remote support.
+- A video **picks up where you left it**, even if you started it on your phone or PC.
+- You can skip forward and back in steps that grow the longer you hold the key.
+- If a stream freezes, the app recovers on its own.
+
+**Fewer interruptions**
+- **Ads are blocked by default** on live streams. If an ad slips through, the sound is muted until it ends. You can turn this off in the settings. It depends on how Twitch serves ads today, so it may not catch every one.
+- Parts of a video that Twitch muted get their sound back, and subscriber-only videos can still be played (both optional, at your own risk; see below).
+
+**A chat made for the TV**
+- A read-only chat for live streams, and for past broadcasts a **replay of the original chat** that follows the video: skip ahead and it jumps with you.
+- **Emotes from Twitch, 7TV, BetterTTV and FrankerFaceZ** appear as images, on by default. They are small and cached so the TV does not slow down.
+- Choose the text size, width, height, corner of the screen and background transparency.
+
+**Your account (optional)**
+- Sign in by scanning a QR code with your phone: no typing on the remote. Then you get **Following**, your followed channels' videos, and channel points collected automatically while you watch (this uses Twitch's private API; see below).
+
+**Light on purpose**
+- It starts quickly, loads only what it needs, and keeps memory use low, so it works well on TVs with little RAM.
+
 ## Install
 
-1. Download `com.twitchlite.app_1.0.0_all.ipk` from the [latest release](https://github.com/adamff-dev/twitch-lite-webos/releases/latest).
+1. Download `com.twitchlite.app_1.2.0_all.ipk` from the [latest release](https://github.com/adamff-dev/twitch-lite-webos/releases/latest).
 2. On your TV, install the **Developer Mode** app from the LG Content Store and turn Developer Mode on.
 3. Install the [webOS TV CLI (ares)](https://webostv.developer.lge.com/develop/tools/cli-installation) and connect to your TV:
 
 ```sh
 ares-setup-device                                              # add the TV once (IP, passphrase from Developer Mode)
-ares-install -d <tv> com.twitchlite.app_1.0.0_all.ipk
+ares-install -d <tv> com.twitchlite.app_1.2.0_all.ipk
 ares-launch  -d <tv> com.twitchlite.app
 ```
 
-To build from source instead: `npm install && npm run package`, which creates `out/com.twitchlite.app_1.0.0_all.ipk`.
+To build from source instead: `npm install && npm run package`, which creates `out/com.twitchlite.app_1.2.0_all.ipk`.
 
 ## Login with Twitch (QR)
 
