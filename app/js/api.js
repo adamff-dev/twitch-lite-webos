@@ -264,6 +264,24 @@
     return out;
   }
 
+  // El token de reproducción se pide con la sesión del usuario cuando es posible (como hace el reproductor oficial): sin ella
+  // Twitch nos trata como un espectador anónimo y sirve un anuncio de inicio en cada sesión. Si falla, se pide como anónimo.
+  function tokenPost(body) {
+    if (!w.Auth || !Auth.tvSession()) return post(body);
+    function ok(j) {
+      var e = Array.isArray(j) ? j[0] : j, d = e && e.data;
+      return !!(d && (d.streamPlaybackAccessToken || d.videoPlaybackAccessToken));
+    }
+    return timeout(fetch(GQL, {
+      method: 'POST',
+      headers: { 'Client-ID': w.CONFIG.TV_CLIENT_ID, 'Content-Type': 'text/plain;charset=UTF-8', Authorization: 'OAuth ' + Auth.token(), 'X-Device-Id': Auth.deviceId() },
+      body: JSON.stringify(body)
+    }), 10000).then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    }).then(function (j) { return ok(j) ? j : post(body); }, function () { return post(body); });
+  }
+
   // Obtiene token + master playlist de un directo ({login}) o de un VOD ({type:'video', id}). Devuelve {master, variants}.
   function playback(item, playerType) {
     var vod = item.type === 'video';
@@ -274,7 +292,7 @@
       },
       extensions: { persistedQuery: { version: 1, sha256Hash: TOKEN_HASH } }
     }];
-    return post(body).then(function (j) {
+    return tokenPost(body).then(function (j) {
       var d = (Array.isArray(j) ? j[0] : j).data;
       var t = d && (vod ? d.videoPlaybackAccessToken : d.streamPlaybackAccessToken);
       if (!t) {
@@ -282,7 +300,7 @@
         throw gone();
       }
       var master = 'https://usher.ttvnw.net/' + (vod ? 'vod/' + encodeURIComponent(item.id) : 'api/channel/hls/' + encodeURIComponent(item.login)) + '.m3u8' +
-        '?player=twitchweb&token=' + encodeURIComponent(t.value) + '&sig=' + t.signature +
+        '?player=' + encodeURIComponent(w.Settings ? Settings.get('usher') : 'twitchweb') + '&token=' + encodeURIComponent(t.value) + '&sig=' + t.signature +
         '&allow_audio_only=true&allow_source=true&type=any&fast_bread=true&p=' + Math.floor(Math.random() * 1e6);
       return timeout(fetch(master), 10000).then(function (r) {
         if (r.status === 404 || r.status === 403) {

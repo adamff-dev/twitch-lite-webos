@@ -11,8 +11,10 @@
   // tr: el texto del valor viene de i18n ('set.<k>.<valor>'); si no, se muestra valor + unit
   var ITEMS = [
     { k: 'tab', def: 'streams', vals: ['streams', 'games', 'following', 'videos'], tr: true },
-    { k: 'cfilter', def: 'auto', vals: ['auto', 'off'], tr: true },     // contenido de mi país (Inicio y categorías)
-    { k: 'unmute', def: 'on', vals: ['on', 'off'], tr: true },          // audio de los tramos silenciados de un VOD
+    { k: 'cfilter', def: 'auto', vals: ['auto', 'off'], tr: true },
+    { k: 'unmute', def: 'on', vals: ['on', 'off'], tr: true },
+    { k: 'adblock', def: 'on', vals: ['on', 'off'], tr: true },
+    { k: 'usher', def: 'twitchweb', vals: ['twitchweb', 'html5', 'web', 'site'], tr: true },
     { k: 'fs', def: 'm', vals: ['s', 'm', 'l', 'xl'], tr: true },
     { k: 'size', def: 25, vals: range(5, 100, 5), unit: '%' },
     { k: 'height', def: 100, vals: range(5, 100, 5), unit: '%' },      // alto del chat (% de la pantalla)

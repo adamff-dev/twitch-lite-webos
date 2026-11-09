@@ -37,6 +37,20 @@
   }
   function token() { return st.access || ''; }
   function userId() { return st.userId || ''; }
+  // Sesión con el token del cliente de TV: la única que acepta también el GraphQL de Twitch (token de reproducción, puntos).
+  function tvSession() { return !!st.access && w.CONFIG.CLIENT_ID === w.CONFIG.TV_CLIENT_ID; }
+  function rand(n) {
+    var c = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', s = '';
+    for (var i = 0; i < n; i++) s += c.charAt(Math.floor(Math.random() * c.length));
+    return s;
+  }
+  function deviceId() {
+    try {
+      var d = localStorage.getItem('did');
+      if (!d) { d = rand(32); localStorage.setItem('did', d); }
+      return d;
+    } catch (e) { return rand(32); }
+  }
 
   function clear() { st = {}; try { localStorage.removeItem('tauth'); } catch (e) {} }
 
@@ -169,7 +183,7 @@
   }
 
   w.Auth = {
-    init: init, isLoggedIn: isLoggedIn, login: login, token: token, userId: userId, avatar: avatar, logout: logout, begin: begin, poll: poll,
+    init: init, isLoggedIn: isLoggedIn, login: login, token: token, userId: userId, tvSession: tvSession, deviceId: deviceId, avatar: avatar, logout: logout, begin: begin, poll: poll,
     followedStreams: followedStreams, followedChannels: followedChannels
   };
 })(window);

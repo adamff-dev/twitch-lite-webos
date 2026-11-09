@@ -72,6 +72,7 @@ function net(o = {}) {
         claimable = false;
         return res([{ data: { claimCommunityPoints: { claim: { pointsEarnedTotal: 50 }, currentPoints: 1234 } } }]);
       }
+      if (Array.isArray(j) && j[0].operationName === 'PlaybackAccessToken' && o.tokenReject && h.Authorization) return res({}, 401);
       if (Array.isArray(j)) {
         const v = j[0].variables;
         if (o.offline) return res([{ data: { streamPlaybackAccessToken: null, videoPlaybackAccessToken: null } }]);
@@ -141,7 +142,11 @@ function boot(o = {}) {
   const w = dom.window;
   const N = o.net || net(o);
   w.fetch = N.fetch;
-  for (const [k, v] of Object.entries(o.ls || {})) w.localStorage.setItem(k, v);
+  // salvo que el test pida los ajustes de serie (o traiga los suyos), se parte con el bloqueo de anuncios apagado: los flujos
+  // de reproducción de los tests usan el reproductor nativo (el bloqueo, activado por defecto, se prueba aparte)
+  const ls = { ...(o.ls || {}) };
+  if (!o.defaults && !ls.settings) ls.settings = JSON.stringify({ adblock: 'off' });
+  for (const [k, v] of Object.entries(ls)) w.localStorage.setItem(k, v);
   // idioma del sistema simulado: por defecto es-ES (lang: null = el de jsdom, en-US)
   const navLang = o.lang === undefined ? 'es-ES' : ({ es: 'es-ES', en: 'en-US' }[o.lang] || o.lang);
   w.__navLang = navLang;
@@ -235,6 +240,33 @@ function boot(o = {}) {
   await assert.rejects(gone.w.Api.playback({ type: 'stream', login: 'x' }), (e) => e.offline === true);
   ok('playback: canal desconectado / VOD no disponible');
 
+  // el token de reproducción va con la sesión del usuario (como el reproductor oficial) para no ser tratado como anónimo
+  const TVID = 'ue6666qo983tsx6so1t0vnawi233wa', WEBID = 'kd1unb4b3q4t58fwlpcbzcbnm76a8fp';
+  const tokenCalls = (x) => x.N.calls.filter((c) => c.url.includes('gql') && /PlaybackAccessToken/.test(c.opts.body || ''));
+  const tvLs = { tauth: JSON.stringify({ access: 'acc1', refresh: 'r', userId: '42', login: 'demo_user', cid: TVID }) };
+  let pt = boot();
+  await pt.w.Api.playback({ type: 'stream', login: 'x' });
+  assert.equal(tokenCalls(pt).length, 1);
+  assert.equal(tokenCalls(pt)[0].opts.headers['Client-ID'], WEBID, 'sin sesión: anónimo, con el Client-ID web');
+  assert.equal(tokenCalls(pt)[0].opts.headers.Authorization, undefined);
+  pt = boot({ ls: tvLs });
+  const pr = await pt.w.Api.playback({ type: 'stream', login: 'x' });
+  assert.match(pr.master, /usher.ttvnw.net/);
+  assert.equal(tokenCalls(pt).length, 1);
+  const th = tokenCalls(pt)[0].opts.headers;
+  assert.equal(th.Authorization, 'OAuth acc1', 'con sesión: el token va con la cuenta');
+  assert.equal(th['Client-ID'], TVID);
+  assert.equal(th['X-Device-Id'].length, 32);
+  pt = boot({ clientId: 'cid123', ls: { tauth: JSON.stringify({ access: 'acc1', userId: '42', login: 'demo_user', cid: 'cid123' }) } });
+  await pt.w.Api.playback({ type: 'stream', login: 'x' });
+  assert.equal(tokenCalls(pt)[0].opts.headers.Authorization, undefined, 'con otro Client-ID la sesión no sirve para el GraphQL: anónimo');
+  pt = boot({ ls: tvLs, tokenReject: true });
+  const pf = await pt.w.Api.playback({ type: 'stream', login: 'x' });
+  assert.match(pf.master, /usher.ttvnw.net/, 'si el servidor rechaza la sesión, reproduce como anónimo');
+  assert.equal(tokenCalls(pt).length, 2);
+  assert.equal(tokenCalls(pt)[1].opts.headers.Authorization, undefined);
+  ok('playback: token con la sesión del usuario (cliente de TV) y respaldo anónimo');
+
   const patched = w.Unmute.patch('#EXTM3U\n#EXT-X-MEDIA:TYPE=VIDEO,GROUP-ID="x",NAME="x"\n#EXTINF:10,\n123-muted.ts\nindex-muted-ABC.m3u8\n');
   assert.equal(patched.changed, 1);
   assert.ok(patched.text.indexOf('123.ts') >= 0 && patched.text.indexOf('123-muted.ts') < 0);
@@ -303,6 +335,118 @@ function boot(o = {}) {
   m.key(m.K.back);
   assert.equal(inst.destroyed, true, 'salir destruye hls.js');
   ok('VOD silenciado: usa hls.js bajo demanda, respeta el ajuste en caliente y lo destruye al salir');
+
+  // bloqueo de anuncios: el filtro quita los segmentos del anunciante y las marcas stitched-ad
+  const A = m.w.Adblock;
+  const AD = '#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:7\n#EXT-X-DATERANGE:ID="ad1",CLASS="twitch-stitched-ad",START-DATE="2026-11-02T10:00:00.000Z",DURATION=4.0\n' +
+    '#EXTINF:2.000,live\nl1.ts\n#EXTINF:2.000,Amazon|123\na1.ts\n#EXTINF:2.000,Amazon|123\na2.ts\n#EXTINF:2.000,live\nl2.ts\n#EXT-X-TWITCH-PREFETCH:p1.ts\n';
+  const cleaned = A.filterVariantPlaylist(AD);
+  assert.ok(cleaned.indexOf('l1.ts') >= 0 && cleaned.indexOf('l2.ts') >= 0, 'los segmentos de la emisión se conservan');
+  assert.ok(!/a1\.ts|a2\.ts|Amazon|stitched-ad|PREFETCH/.test(cleaned), 'sin anuncio, marca ni precarga');
+  assert.ok(cleaned.indexOf('#EXT-X-MEDIA-SEQUENCE:7') >= 0);
+  const clean = '#EXTM3U\n#EXTINF:2.000,live\nl1.ts\n#EXT-X-TWITCH-PREFETCH:p1.ts\n';
+  assert.equal(A.filterVariantPlaylist(clean), clean, 'sin anuncios no se toca');
+  const allAds = '#EXTM3U\n#EXTINF:2.000,Amazon|1\na1.ts\n#EXTINF:2.000,Amazon|1\na2.ts\n';
+  assert.equal(A.filterVariantPlaylist(allAds), allAds, 'si todo es anuncio no se vacía la lista');
+  // el cargador filtra solo las listas de medios, no la maestra
+  const FH = function () {}; FH.DefaultConfig = { loader: function () {} };
+  FH.DefaultConfig.loader.prototype.load = function (ctx, cfg, cb) { cb.onSuccess({ data: ctx.body }, {}, ctx, null); };
+  const PL = A.makeAdblockLoaders(FH).pLoader;
+  const loaded = (body) => { let r; new PL({}).load({ body }, {}, { onSuccess: (x) => { r = x.data; } }); return r; };
+  assert.equal(loaded(AD), cleaned, 'la lista de medios sale filtrada');
+  const master = '#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1\nhttps://x/v.m3u8\n#EXTINF:2.000,Amazon|1\n';
+  assert.equal(loaded(master), master, 'la lista maestra no se toca');
+  ok('bloqueo de anuncios: el filtro quita segmentos del anunciante y respeta listas sin ellos');
+
+  // lista solo de anuncios (mid-roll): se sustituye por la del respaldo; si el respaldo falla se deja pasar el anuncio y se avisa
+  assert.equal(A.onlyAds(allAds), true);
+  assert.equal(A.onlyAds(AD), false, 'con segmentos de la emisión no es solo anuncio');
+  assert.equal(A.onlyAds(clean), false);
+  assert.equal(A.onlyAds('#EXTM3U\n'), false);
+  const BK = '#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:9\n#EXTINF:2.000,live\nb1.ts\n#EXTINF:2.000,live\nb2.ts\n';
+  const run = (body, opts) => { let r; const calls = { backup: 0, leak: 0 };
+    const PB = A.makeAdblockLoaders(FH, { backup: (done) => { calls.backup++; opts.backup(done); }, onLeak: () => { calls.leak++; } }).pLoader;
+    new PB({}).load({ body }, {}, { onSuccess: (x) => { r = x.data; } }); return { r: () => r, calls }; };
+  let b = run(allAds, { backup: (done) => done(BK) });
+  assert.equal(b.r(), BK, 'mid-roll: se sirve la lista del respaldo');
+  assert.deepEqual(b.calls, { backup: 1, leak: 0 });
+  b = run(allAds, { backup: (done) => done('') });
+  assert.equal(b.r(), allAds, 'respaldo vacío: pasa el anuncio original');
+  assert.deepEqual(b.calls, { backup: 1, leak: 1 }, 'y se avisa de la fuga');
+  b = run(allAds, { backup: (done) => done('#EXTM3U\n#EXTINF:2.000,Amazon|9\nz.ts\n') });
+  assert.equal(b.r(), allAds, 'un respaldo que también trae solo anuncio no vale');
+  assert.equal(b.calls.leak, 1);
+  // empieza un anuncio: segmentos de la emisión y, tras ellos, los del anunciante -> respaldo ya, sin esperar a que todo sea anuncio
+  assert.equal(A.needsBackup(AD), true, 'anuncio tras la emisión');
+  assert.equal(A.needsBackup(allAds), true);
+  assert.equal(A.needsBackup(clean), false);
+  b = run(AD, { backup: (done) => done(BK) });
+  assert.equal(b.r(), BK, 'al empezar el anuncio se sirve el respaldo');
+  assert.deepEqual(b.calls, { backup: 1, leak: 0 });
+  b = run(AD, { backup: (done) => done('') });
+  assert.equal(b.r(), cleaned, 'si el respaldo falla se filtra el anuncio');
+  assert.deepEqual(b.calls, { backup: 1, leak: 0 }, 'y no es fuga: aún queda emisión');
+  // el anuncio acaba: solo quedan restos al principio de la lista -> se quitan y la secuencia avanza, sin respaldo
+  const HEAD = '#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:7\n#EXTINF:2.000,Amazon|1\na1.ts\n#EXTINF:2.000,Amazon|1\na2.ts\n#EXTINF:2.000,live\nl1.ts\n#EXTINF:2.000,live\nl2.ts\n';
+  assert.equal(A.needsBackup(HEAD), false, 'anuncio solo al principio');
+  b = run(HEAD, { backup: (done) => done(BK) });
+  assert.equal(b.r(), '#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:9\n#EXTINF:2.000,live\nl1.ts\n#EXTINF:2.000,live\nl2.ts\n', 'se quitan y la numeración avanza');
+  assert.deepEqual(b.calls, { backup: 0, leak: 0 });
+  let late; const PL2 = A.makeAdblockLoaders(FH, { backup: (done) => { late = done; }, onLeak() {} }).pLoader;
+  let got; new PL2({}).load({ body: allAds }, {}, { onSuccess: (x) => { got = x.data; } });
+  assert.equal(got, undefined, 'espera al respaldo antes de entregar la lista');
+  late(BK);
+  assert.equal(got, BK);
+  ok('bloqueo de anuncios: mid-roll sustituido por la lista de respaldo, con salida segura si falla');
+
+  // directo con el ajuste activo: se reproduce por hls.js; apagarlo en caliente vuelve al reproductor nativo
+  const li = { destroyed: false, loaded: '', attached: false, handlers: {}, config: null,
+    on(e, f) { this.handlers[e] = f; }, attachMedia() { this.attached = true; },
+    loadSource(x) { this.loaded = x; }, destroy() { this.destroyed = true; } };
+  function LiveHls(config) { li.config = config; return li; }
+  LiveHls.DefaultConfig = FakeHls.DefaultConfig; LiveHls.isSupported = () => true;
+  LiveHls.Events = FakeHls.Events; LiveHls.ErrorTypes = FakeHls.ErrorTypes;
+  const lv = boot({ ls: { settings: JSON.stringify({ adblock: 'on', usher: 'html5' }) }, beforeScripts: (win) => { win.Hls = LiveHls; } });
+  lv.w.Player.open({ type: 'stream', login: 'foo', name: 'Foo', title: 'Directo' }, () => {});
+  await lv.until(() => li.loaded, 'hls.js para el directo');
+  assert.ok(li.attached);
+  assert.match(li.loaded, /usher\.ttvnw\.net\/api\/channel\/hls\/foo\.m3u8\?player=html5&/, 'usa el tipo de reproductor elegido');
+  assert.equal(typeof li.config.pLoader, 'function');
+  assert.equal(lv.$('v').getAttribute('src'), null, 'el flujo va por MSE, no por src');
+
+  // el token y la lista maestra del respaldo se piden con antelación, en cuanto el directo arranca por hls.js
+  const bkCalls = () => lv.N.calls.filter((c) => c.url.includes('gql') && /picture-by-picture/.test(c.opts.body || '')).length;
+  assert.equal(bkCalls(), 0, 'antes de arrancar no se pide');
+  li.handlers.manifest();
+  await lv.until(() => bkCalls() === 1, 'respaldo precargado');
+  li.handlers.manifest();
+  await sleep(50);
+  assert.equal(bkCalls(), 1, 'con el respaldo reciente no se vuelve a pedir');
+  ok('directo con hls.js: el respaldo de anuncios se precarga una sola vez');
+
+  // atasco con hls.js (p. ej. al pasar de un anuncio a la lista de respaldo): se recarga el flujo sin saltar al borde
+  const lvv = lv.$('v');
+  Object.defineProperty(lvv, 'paused', { value: false, configurable: true });
+  lvv.setAttribute('src', 'blob:atasco');
+  lv.w.CONFIG.STALL_MS = 40;
+  const lvUsher = () => lv.N.calls.filter((c) => c.url.startsWith('https://usher.ttvnw.net')).length;
+  const lvBefore = lvUsher();
+  li.destroyed = false; li.loaded = '';
+  lvv.dispatchEvent(new lv.w.Event('waiting'));
+  await lv.until(() => lvUsher() === lvBefore + 1, 'recarga del directo atascado con hls.js');
+  assert.equal(li.destroyed, true, 'la recarga destruye la instancia de hls.js');
+  await lv.until(() => li.loaded, 'hls.js de nuevo tras la recarga');
+  lv.w.CONFIG.STALL_MS = 8000;
+  ok('directo con hls.js: un atasco recarga el flujo');
+  lv.key(lv.K.green);
+  for (let i = 0; i < 3; i++) lv.key(lv.K.down);
+  lv.key(lv.K.right);
+  assert.equal(lv.w.Settings.get('adblock'), 'off');
+  await lv.until(() => li.destroyed, 'apagar el ajuste destruye hls.js');
+  await lv.until(() => lv.$('v').getAttribute('src'), 'vuelve al flujo nativo');
+  lv.key(lv.K.back);
+  lv.key(lv.K.back);
+  ok('directo: el bloqueo de anuncios usa hls.js, respeta el tipo de reproductor y se apaga en caliente');
 
   const s = J(await w.Api.search('fo o'));
   assert.deepEqual(s.items.map((i) => [i.login, i.live, i.type]), [['bar', true, 'channel'], ['foo', false, 'channel']]);
@@ -770,6 +914,28 @@ function boot(o = {}) {
   assert.equal(v.paused, false);
   ok('directo: sin rangos seekables, reanudar recarga el flujo una sola vez');
 
+  // atasco en un directo: la posición se pasa del final de la lista y el reproductor nativo no avanza solo
+  w.CONFIG.STALL_MS = 40;
+  v.__live = 5200; v.__t = 5210; v.__seeks = 0;
+  before = usher();
+  v.dispatchEvent(new w.Event('waiting'));
+  await until(() => v.__seeks === 1, 'salto al borde en vivo tras el atasco');
+  assert.equal(v.__t, 5197, 'salta 3 s antes del borde en vivo');
+  assert.equal(usher(), before, 'primero salta, sin recargar');
+  await until(() => usher() === before + 1, 'recarga si sigue atascado');
+  await until(() => v.getAttribute('src'), 'src tras recargar el atasco');
+  await sleep(150);
+  assert.equal(usher(), before + 1, 'la recarga ocurre una sola vez');
+  // si el vídeo se recupera antes de que venza el plazo, no se toca nada
+  v.__live = 5300; v.__t = 5290; v.__seeks = 0; before = usher();
+  v.dispatchEvent(new w.Event('waiting'));
+  v.dispatchEvent(new w.Event('playing'));
+  await sleep(200);
+  assert.equal(v.__seeks, 0, 'recuperado: no salta');
+  assert.equal(usher(), before, 'recuperado: no recarga');
+  w.CONFIG.STALL_MS = 8000;
+  ok('directo: un atasco salta al borde en vivo y, si sigue parado, recarga el flujo; si se recupera, no hace nada');
+
   // pausa muy larga (lista HLS caducada): se recarga aunque haya borde en vivo
   v.__live = 6000; v.__t = 0; v.__seeks = 0; before = usher();
   key(K.ok); await sleep(20); skew += 40000;
@@ -1186,6 +1352,7 @@ function boot(o = {}) {
   ok('chat: al salir del directo se cierra la conexión y no reconecta');
 }
 
+
 /* ---------- 8) navegación ---------- */
 {
   const t = boot();
@@ -1363,7 +1530,7 @@ function boot(o = {}) {
 
 /* ---------- 10) ajustes (botón Verde) ---------- */
 {
-  const t = boot();
+  const t = boot({ defaults: true });
   const { d, $, key, K, until, focused, cards, w } = t;
   const rows = () => [...d.querySelectorAll('#srows .si')];
   const stored = () => JSON.parse(w.localStorage.getItem('settings'));
@@ -1375,20 +1542,22 @@ function boot(o = {}) {
   assert.equal($('settings').hidden, false, 'Verde abre los ajustes');
   assert.equal(w.Settings.isOpen(), true);
   assert.equal($('settings').className, '', 'fuera del reproductor el panel va centrado');
-  assert.equal(rows().length, 11, '9 ajustes + créditos + restablecer');
+  assert.equal(rows().length, 13, '11 ajustes + créditos + restablecer');
   assert.match(rows()[0].textContent, /Pestaña al abrir la aplicación.*Inicio/);
   assert.match(rows()[1].textContent, /Contenido de mi país.*Automático/);
   assert.match(rows()[2].textContent, /Restaurar audio silenciado.*Sí/);
-  assert.match(rows()[3].textContent, /Tamaño de la letra del chat.*Normal/);
-  assert.match(rows()[4].textContent, /Ancho del chat.*25%/);
-  assert.match(rows()[5].textContent, /Alto del chat.*100%/);
-  assert.match(rows()[6].textContent, /Posición del chat.*Arriba derecha/);
-  assert.match(rows()[7].textContent, /Opacidad.*90%/);
-  for (let i = 0; i < 6; i++) key(K.down);                    // las flechas no mueven la cuadrícula de detrás
+  assert.match(rows()[3].textContent, /Bloquear anuncios.*Sí/, 'el bloqueo de anuncios viene activado de serie');
+  assert.match(rows()[4].textContent, /Tipo de reproductor.*Twitch Web \(defecto\)/);
+  assert.match(rows()[5].textContent, /Tamaño de la letra del chat.*Normal/);
+  assert.match(rows()[6].textContent, /Ancho del chat.*25%/);
+  assert.match(rows()[7].textContent, /Alto del chat.*100%/);
+  assert.match(rows()[8].textContent, /Posición del chat.*Arriba derecha/);
+  assert.match(rows()[9].textContent, /Opacidad.*90%/);
+  for (let i = 0; i < 8; i++) key(K.down);                    // las flechas no mueven la cuadrícula de detrás
   assert.equal(focused().getAttribute('data-i'), '0');
   key(K.ok);                                                  // OK en la posición: siguiente valor
   assert.equal(w.Settings.get('pos'), 'bl');
-  for (let i = 0; i < 6; i++) key(K.up);
+  for (let i = 0; i < 8; i++) key(K.up);
   key(K.ok);                                                  // OK en la pestaña inicial: siguiente valor
   assert.equal(w.Settings.get('tab'), 'games');
   assert.equal(stored().tab, 'games', 'se guarda al momento');
@@ -1399,16 +1568,16 @@ function boot(o = {}) {
 
   // límites con ◀ ▶ (no dan la vuelta) y restablecer
   key(K.green);
-  for (let i = 0; i < 7; i++) key(K.down);                    // opacidad
+  for (let i = 0; i < 9; i++) key(K.down);                    // opacidad
   for (let i = 0; i < 15; i++) key(K.left);
   assert.equal(w.Settings.get('op'), 0, 'la opacidad no baja de 0');
   for (let i = 0; i < 15; i++) key(K.right);
   assert.equal(w.Settings.get('op'), 100);
   key(K.down); key(K.right);                                  // ocultar panel tras
   assert.equal(w.Settings.hideMs(), 6000);
-  key(K.down); key(K.down); assert.match(rows()[10].textContent, /Restablecer/);   // antes pasa por Créditos
+  key(K.down); key(K.down); assert.match(rows()[12].textContent, /Restablecer/);   // antes pasa por Créditos
   key(K.ok);
-  assert.deepEqual(stored(), { tab: 'streams', cfilter: 'auto', unmute: 'on', fs: 'm', size: 25, height: 100, pos: 'tr', op: 90, hide: 4 }, 'restablecer vuelve a los valores de serie');
+  assert.deepEqual(stored(), { tab: 'streams', cfilter: 'auto', unmute: 'on', adblock: 'on', usher: 'twitchweb', fs: 'm', size: 25, height: 100, pos: 'tr', op: 90, hide: 4 }, 'restablecer vuelve a los valores de serie');
   key(K.back);
   assert.equal($('settings').hidden, true, 'Atrás cierra');
   ok('ajustes: límites de ◀ ▶ y restablecer valores por defecto');
@@ -1458,7 +1627,7 @@ function boot(o = {}) {
   assert.equal(w.Player.isOpen(), true, 'Atrás cierra solo los ajustes');
   assert.equal($('settings').hidden, true);
   key(K.green);
-  key(K.down); key(K.down); key(K.down); key(K.down);          // tamaño (tras pestaña, contenido y audio)
+  for (let i = 0; i < 6; i++) key(K.down);                    // tamaño (tras pestaña, contenido, audio, anuncios, usher y letra)
   key(K.left);
   assert.equal($('chat').style.width, '20vw', 'un paso = 5 %'); assert.equal($('chat').style.height, '100%');
   assert.equal($('ovl').style.right, '20vw');
@@ -1487,7 +1656,7 @@ function boot(o = {}) {
   key(K.back);
   key(K.green);
   assert.equal($('settings').className, 'pl ar', 'con el chat a la izquierda el panel va a la derecha');
-  for (let i = 0; i < 10; i++) key(K.down);                   // restablecer (tras Créditos): el alto vuelve al 100 %
+  for (let i = 0; i < 12; i++) key(K.down);                   // restablecer (tras Créditos): el alto vuelve al 100 %
   key(K.ok);
   assert.equal(w.Settings.get('height'), 100);
   assert.equal($('chat').style.height, '100%', 'restablecer devuelve el alto al 100 %');
@@ -1526,9 +1695,9 @@ function boot(o = {}) {
   const rows = () => [...d.querySelectorAll('#srows .si')];
   await until(() => cards().length === 6, 'inicio (créditos)');
   key(K.green);
-  for (let i = 0; i < 9; i++) key(K.down);                    // las 9 filas de ajustes → Créditos
-  assert.match(rows()[9].textContent, /Créditos/);
-  assert.ok(rows()[9].classList.contains('on'), 'la fila Créditos queda enfocada');
+  for (let i = 0; i < 11; i++) key(K.down);                   // las 11 filas de ajustes → Créditos
+  assert.match(rows()[11].textContent, /Créditos/);
+  assert.ok(rows()[11].classList.contains('on'), 'la fila Créditos queda enfocada');
   key(K.ok);
   assert.equal($('credits').hidden, false, 'OK abre los créditos');
   assert.equal(w.Credits.isOpen(), true);
@@ -1539,7 +1708,7 @@ function boot(o = {}) {
   assert.equal($('cqr').innerHTML, qrHtml(w, w.CONFIG.CREDITS.url));
   key(K.down); key(K.green);                                  // mientras se ven, el mando no llega a los ajustes
   assert.equal($('settings').hidden, false, 'Verde no cierra los ajustes desde los créditos');
-  assert.ok(rows()[9].classList.contains('on'), 'Abajo no movió la selección de Ajustes');
+  assert.ok(rows()[11].classList.contains('on'), 'Abajo no movió la selección de Ajustes');
   key(K.back);
   assert.equal($('credits').hidden, true, 'Atrás cierra los créditos');
   assert.equal($('settings').hidden, false, 'y vuelve a Ajustes');
@@ -1555,7 +1724,7 @@ function boot(o = {}) {
   t2.w.CONFIG.CREDITS.donate = DON;
   await t2.until(() => t2.cards().length === 6, 'inicio (donar)');
   t2.key(t2.K.green);
-  for (let i = 0; i < 9; i++) t2.key(t2.K.down);
+  for (let i = 0; i < 11; i++) t2.key(t2.K.down);
   t2.key(t2.K.ok);
   assert.equal(t2.$('cqrtxt').textContent, 'Escanea para apoyar el proyecto con una donación', 'con donaciones: texto de donar');
   assert.equal(t2.$('cqr').innerHTML, qrHtml(t2.w, DON), 'con donaciones: el QR apunta a la URL de donar');
@@ -1566,8 +1735,8 @@ function boot(o = {}) {
   const en = boot({ lang: 'en' });
   await en.until(() => en.cards().length === 6, 'inicio (créditos en inglés)');
   en.key(en.K.green);
-  for (let i = 0; i < 9; i++) en.key(en.K.down);
-  assert.match(en.d.querySelectorAll('#srows .si')[9].textContent, /Credits/);
+  for (let i = 0; i < 11; i++) en.key(en.K.down);
+  assert.match(en.d.querySelectorAll('#srows .si')[11].textContent, /Credits/);
   en.key(en.K.ok);
   assert.equal(en.$('ctitle').textContent, 'Credits');
   assert.equal(en.$('cmade').textContent, 'Made by adamff-dev');

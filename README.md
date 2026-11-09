@@ -97,7 +97,11 @@ On a live stream, resuming after a pause of more than 2 s jumps to the live edge
 
 **Resuming VODs.** A VOD continues where you left it (not if you finished it or watched under 15 s). The position is stored on the TV; when you are signed in with the default Twitch TV client it is also read from Twitch (`video.self.viewingHistory`), so a VOD you left on your phone or PC resumes on the TV, and the most recent position wins. Twitch exposes no public operation to *write* that position, so what you watch on the TV stays on the TV.
 
-**Ads.** During an ad on a live stream (detected from the HLS playlist: `stitched-ad` date ranges or ad-titled segments) the audio is muted and restored when the ad ends. The ad itself still plays: nothing is skipped or blocked.
+**Ads.** During an ad on a live stream (detected from the HLS playlist: `stitched-ad` date ranges or ad-titled segments) the audio is muted and restored when the ad ends. **Settings > Block ads** is on by default and tries to remove the ad (see below); with it off, the ad plays.
+
+**Blocking ads (on by default, optional).** With **Block ads** on (the default), live streams play through hls.js (loaded on demand, like for muted VODs) and a playlist loader removes the ad segments (segments whose title is not `live`), the `stitched-ad` date ranges and the prefetch hints from the media playlist. Mid-roll ads replace the stream instead of being interleaved with it: the playlist holds the last segments of the stream followed by ad segments, and soon nothing but ad segments, so removing them would leave the player without data. As soon as an ad segment shows up after stream segments, the app asks Twitch for the playlist of the same channel with the `picture-by-picture` player type, which is served without ads (at a lower quality, 360p at most, which comes back to normal when the ad ends), and plays that one meanwhile. If that request fails, the original playlist is kept so the player is never left without data: that ad plays, muted. While blocking, the audio is only muted in that case. If hls.js cannot start, the native player is used. **Player type (usher)** changes the `player` parameter sent to usher (*Twitch Web* by default, *HTML5*, *Web* or *Site*); Twitch may serve fewer ads to some of them. When you are signed in with the default Twitch TV client, the playback token is requested with your account, like the official player does; otherwise it is requested anonymously (which can bring a start-up ad).
+
+**Stalls.** If a live stream stops receiving data for 8 s, the player jumps to the live edge and, if it is still stuck, reloads the stream.
 
 ## Settings
 
@@ -106,6 +110,8 @@ Press **Green** to open the settings. ▲ ▼ move between rows, ◀ ▶ change 
 - **Tab on app start**: Home, Categories, Following or Videos.
 - **Content from my country**: *Automatic* (the default: Home and category streams use your system language, see [Language](#language)) or *Everything*. Changing it reloads Home and Categories.
 - **Restore muted audio**: *Yes* (the default) or *No*. See [Muted VOD segments and sub-only VODs](#muted-vod-segments-and-sub-only-vods).
+- **Block ads**: *Yes* (the default) or *No*. See the **Ads** paragraphs above.
+- **Player type (usher)**: *Twitch Web* (the default), *HTML5*, *Web* or *Site*. Changing it, or Block ads, reloads the live stream you are watching.
 - **Chat**:
   - text size (4 levels);
   - width (5–100 % of the screen, in steps of 5);
@@ -148,6 +154,7 @@ The app targets webOS 4 and later (Chromium 53), so the code avoids `async/await
 - `app/js/qr.js`: our own QR generator (checked with OpenCV, see `tools/qr-check`)
 - `app/js/chat.js`: optimized read-only chat (live IRC, and the synchronized replay for VODs)
 - `app/js/ads.js`: detects ads in the live playlist (the player mutes the audio during them)
+- `app/js/adblock.js`: optional ad blocking: hls.js playlist loader that removes ad segments from live streams
 - `app/js/resume.js`: VOD resume position (local and, when available, from Twitch)
 - `app/js/unmute.js`: restores the audio of muted VOD segments (loads `hls.light.min.js` on demand)
 - `app/js/settings.js`: settings (Green button)

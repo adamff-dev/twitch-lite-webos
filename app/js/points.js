@@ -4,7 +4,6 @@
 (function (w) {
   'use strict';
   var GQL = 'https://gql.twitch.tv/gql';
-  var TV_ID = 'ue6666qo983tsx6so1t0vnawi233wa';
   var CONTEXT_HASH = '374314de591e69925fce3ddc2bcf085796f56ebb8cad67a0daa3165c03adc345';   // ChannelPointsContext
   var CLAIM_HASH = '46aaeebe02c99afdf4fc97c7c0cba964124bf6b0af229395f1f6d1feed05b3d0';     // ClaimCommunityPoints
   var SPADE = 'https://spade.twitch.tv/track';
@@ -12,28 +11,15 @@
   var REFRESH_IDS = 10;     // cada tantos avisos se vuelve a pedir el id de la emisión (cambia si el canal reinicia el directo)
   var channel = null, timer = 0, busy = false, onClaim = null, isPlaying = null, ids = null, beats = 0;
 
-  function rand(n) {
-    var c = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', s = '';
-    for (var i = 0; i < n; i++) s += c.charAt(Math.floor(Math.random() * c.length));
-    return s;
-  }
-  function deviceId() {
-    try {
-      var d = localStorage.getItem('did');
-      if (!d) { d = rand(32); localStorage.setItem('did', d); }
-      return d;
-    } catch (e) { return rand(32); }
-  }
-
   // Solo con sesión y con el token del cliente de TV (con otro Client ID el GraphQL lo rechaza).
   function enabled() {
     var off = false;
     try { off = localStorage.getItem('ptsOff') === '1'; } catch (e) {}
-    return !off && Auth.isLoggedIn() && w.CONFIG.CLIENT_ID === TV_ID;
+    return !off && Auth.isLoggedIn() && Auth.tvSession();
   }
 
   function call(body, claim) {
-    var h = { 'Content-Type': 'application/json', 'Client-Id': TV_ID, 'X-Device-Id': deviceId(), Authorization: 'OAuth ' + Auth.token() };
+    var h = { 'Content-Type': 'application/json', 'Client-Id': w.CONFIG.TV_CLIENT_ID, 'X-Device-Id': Auth.deviceId(), Authorization: 'OAuth ' + Auth.token() };
     if (claim) h['api-consumer-type'] = 'tv; lg_web_tv/sst-8414cf5';
     return Api.timeout(fetch(GQL, { method: 'POST', headers: h, body: JSON.stringify(body) }), 10000).then(function (r) {
       if (!r.ok) throw new Error('HTTP ' + r.status);

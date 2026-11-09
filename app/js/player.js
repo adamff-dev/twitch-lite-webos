@@ -123,11 +123,13 @@
   }
   function stopHls() {
     hlsStarting = false;
+    adblockHls = false;
+    clearInterval(backupT); backupT = 0;
     var old = hls;
     hls = null;
     if (old) { try { old.destroy(); } catch (e) {} }
   }
-  function stop() { stopHls(); stopMedia(); }
+  function stop() { stallStop(); stopHls(); stopMedia(); }
 
   function info() {
     var parts = [];
@@ -166,6 +168,8 @@
   // Seguros para no dejar el audio mudo por error: tope de AD_MAX_MS seguidos y se suelta tras AD_FAILS lecturas fallidas.
   var adT = 0, adOn = false, adWasMuted = false, adSince = 0, adFails = 0, adBlock = false;
   var AD_MAX_MS = 180000, AD_FAILS = 3;
+  var adblockHls = false, adLeakAt = 0, backupVars = null, backupAt = 0, backupT = 0, backupP = null;
+  var BACKUP_TTL = 240000, BACKUP_WARM = 150000;
   function setAd(on) {
     if (on === adOn) return;
     adOn = on;
@@ -184,6 +188,7 @@
       if (id !== loadId || !isOpen) return;
       adFails = 0;
       var ad = Ads.playingAd(t, adLag(), AD_LEAD, AD_TAIL);
+      if (adblockHls) ad = ad && Date.now() - adLeakAt < 10000;   // bloqueando: solo se silencia si un anuncio se cuela
       if (!ad) adBlock = false;
       else if (adOn && Date.now() - adSince > AD_MAX_MS) { adBlock = true; ad = false; }   // un anuncio no dura tanto: algo va mal
       setAd(ad && !adBlock);
@@ -207,8 +212,9 @@
     if (!hls) return;
     unmuteFailed = true;
     keepPosition();
+    var wasAdblock = adblockHls;
     stopHls();
-    flash(I18n.t('player.unmuteFailed'), 4000);
+    flash(I18n.t(wasAdblock ? 'player.adblockFailed' : 'player.unmuteFailed'), 4000);
     play();
   }
 
@@ -257,6 +263,87 @@
     });
   }
 
+  // Lista de medios del mismo canal con el tipo de reproductor 'picture-by-picture', que Twitch sirve sin anuncios (a menor
+  // calidad). Se usa solo mientras la lista normal trae únicamente anuncio. Cualquier fallo devuelve '' (el anuncio suena).
+  function adBackup(done) {
+    var id = loadId, name = quals[qi] ? quals[qi].name : '';
+    function use(vars) {
+      var u = '';
+      for (var i = 0; i < vars.length; i++) if (vars[i].name === name) u = vars[i].url;
+      if (!u && vars.length) u = vars[0].url;
+      if (!u) { done(''); return; }
+      Api.text(u).then(function (t) { done(id === loadId ? t : ''); }, function () { backupVars = null; done(''); });
+    }
+    if (backupVars && Date.now() - backupAt < BACKUP_TTL) { use(backupVars); return; }
+    fetchBackup().then(function (vars) { use(vars); }, function () { done(''); });
+  }
+  function fetchBackup() {
+    if (backupP) return backupP;                        // una sola petición a la vez
+    var id = loadId;
+    function end() { if (id === loadId) backupP = null; }
+    backupP = Api.playback(item, 'picture-by-picture').then(function (r) {
+      end();
+      if (id === loadId) { backupVars = r.variants; backupAt = Date.now(); }
+      return r.variants;
+    }, function (e) { end(); throw e; });
+    return backupP;
+  }
+  // El token y la lista maestra del respaldo se piden con antelación (y se renuevan): así, cuando llega un anuncio, solo falta
+  // pedir la lista de medios y el vídeo no se queda sin datos esperándolos.
+  function warmBackup() {
+    if (!adblockHls || isVod) return;
+    if (!backupT) backupT = setInterval(warmBackup, BACKUP_WARM);
+    if (backupVars && Date.now() - backupAt < BACKUP_WARM) return;
+    fetchBackup().then(function () {}, function () {});
+  }
+
+  function startAdblockHls(id) {
+    if (!isOpen || id !== loadId || hlsStarting || unmuteFailed || !w.Adblock) return;
+    if (hls) { keepPosition(); stopHls(); }
+    var source = quals[qi] ? quals[qi].url : '';
+    if (!source) return;
+    hlsStarting = true;
+    hlsErrs = 0;
+    flash(I18n.t('player.adblockOn'), 3000);
+    w.Adblock.start(source, function (Hls, L) {
+      if (!isOpen || id !== loadId || !hlsStarting) { hlsStarting = false; return; }
+      hlsStarting = false;
+      var wasPlaying = !v.paused || !v.getAttribute('src');   // directo recién abierto: aún sin flujo, arranca solo
+      keepPosition();
+      stopMedia();
+      var inst = new Hls({
+        pLoader: L.pLoader, enableWorker: true,
+        maxBufferLength: 30, maxMaxBufferLength: 60, maxBufferSize: 30 * 1000 * 1000
+      });
+      hls = inst;
+      adblockHls = true;
+      inst.on(Hls.Events.ERROR, function (ev, data) {
+        if (!data || !data.fatal || hls !== inst) return;
+        if (++hlsErrs > 2) { hlsFail(); return; }
+        if (data.type === Hls.ErrorTypes.NETWORK_ERROR) inst.startLoad();
+        else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) inst.recoverMediaError();
+        else hlsFail();
+      });
+      inst.on(Hls.Events.MANIFEST_PARSED, function () {
+        if (hls !== inst) return;
+        hlsErrs = 0;
+        if ((quals[qi] ? quals[qi].url : '') !== source) { startAdblockHls(id); return; }
+        if (wasPlaying) { var p = v.play(); if (p && p.catch) p.catch(function () {}); }
+        info();
+        warmBackup();
+      });
+      inst.attachMedia(v);
+      inst.loadSource(source);
+    }, function () {
+      hlsStarting = false;
+      unmuteFailed = true;
+      adblockHls = false;
+      if (!isOpen || id !== loadId) return;
+      play();                                           // sin hls.js: reproductor nativo con la lista original
+      flash(I18n.t('player.adblockFailed'), 4000);
+    }, { backup: adBackup, onLeak: function () { adLeakAt = Date.now(); } });
+  }
+
   function checkUnmute(id, known) {
     if (!isVod || unmuteFailed || !w.Unmute || Settings.get('unmute') === 'off') return;
     if (known === true) { startHls(id); return; }
@@ -270,6 +357,9 @@
 
   function play() {
     pausedAt = 0;                                       // un flujo nuevo empieza en vivo: no hay pausa que recuperar
+    var useAdblock = !isVod && Settings.get('adblock') === 'on' && !!w.Adblock && !unmuteFailed;
+    if (adblockHls && !useAdblock) stopHls();           // el ajuste se apagó (o hls.js falló): vuelve al reproductor nativo
+    if (useAdblock) { startAdblockHls(loadId); startAds(); return; }
     if (hls || hlsStarting) { startHls(loadId); return; }
     v.src = quals[qi].url;
     var p = v.play();
@@ -280,6 +370,7 @@
 
   function load() {
     var id = ++loadId;
+    backupVars = null; backupP = null;
     var fresh = isVod && !resumeAt;                     // VOD recién abierto (no un reintento): ¿por dónde iba?
     say(I18n.t('loading'));
     stop();
@@ -380,6 +471,30 @@
     if (edge === null) load();
   }
 
+  // Atasco en un directo: el reproductor nativo se queda esperando segmentos que ya no llegan (su posición se pasa del final
+  // de la lista y nunca se recupera solo). Tras STALL_MS sin datos salta al borde en vivo; si sigue parado, recarga el flujo.
+  // Con hls.js (bloqueo de anuncios) recarga el flujo directamente.
+  var stallT = 0, stallTries = 0;
+  function stallStop() { clearTimeout(stallT); stallT = 0; stallTries = 0; }
+  function stallWatch() {
+    if (isVod || stallT || !isOpen) return;
+    stallT = setTimeout(function () {
+      stallT = 0;
+      if (!isOpen || isVod || v.paused || document.hidden || !v.getAttribute('src') || v.readyState >= 3) return;
+      var edge = liveEdge();
+      // con hls.js (bloqueo de anuncios) no se salta al borde: en un cambio de anuncio a respaldo el salto lo hace él y puede
+      // quedarse esperando segmentos que ya no están; se recarga directamente
+      if (!hls && stallTries++ === 0 && edge !== null) {
+        try { v.currentTime = Math.max(0, edge - 3); } catch (e) {}
+        stallWatch();
+      } else {
+        stallTries = 0;
+        retried = false;
+        load();
+      }
+    }, w.CONFIG.STALL_MS || 8000);
+  }
+
   function openMenu() {
     if (quals.length < 2) { flash(I18n.t('player.noQualities'), 1500); return; }
     menu = true; mi = qi; qm.hidden = false; renderMenu();
@@ -458,8 +573,9 @@
   });
   I18n.onChange(function () { if (isOpen && item) info(); });
 
-  v.addEventListener('playing', function () { retried = false; say(''); renderState(); });
-  v.addEventListener('waiting', function () { if (isOpen) say(I18n.t('loading')); });
+  v.addEventListener('playing', function () { retried = false; stallStop(); say(''); renderState(); });
+  v.addEventListener('waiting', function () { if (isOpen) { say(I18n.t('loading')); stallWatch(); } });
+  v.addEventListener('stalled', stallWatch);
   v.addEventListener('timeupdate', function () { updTime(); savePos(false); });
   v.addEventListener('loadedmetadata', applyResume);
   v.addEventListener('canplay', applyResume);
@@ -490,12 +606,18 @@
 
   Settings.onChange(function (k) {
     layoutChat();
-    if (k !== 'unmute' || !isOpen || !isVod) return;
-    if (Settings.get('unmute') === 'off') {
-      if (hls || hlsStarting) { keepPosition(); stopHls(); play(); }
-    } else {
+    if (!isOpen) return;
+    if (k === 'unmute' && isVod) {
+      if (Settings.get('unmute') === 'off') {
+        if (hls || hlsStarting) { keepPosition(); stopHls(); play(); }
+      } else {
+        unmuteFailed = false;
+        checkUnmute(loadId, false);
+      }
+    } else if ((k === 'adblock' || k === 'usher') && !isVod) {
       unmuteFailed = false;
-      checkUnmute(loadId, false);
+      retried = false;
+      load();                                           // otro token/lista de usher y, si toca, por hls.js
     }
   });
 
