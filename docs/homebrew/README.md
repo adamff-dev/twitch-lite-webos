@@ -16,10 +16,10 @@ Guide: https://www.webosbrew.org/develop/guides/publishing/how-to/ · Rules: htt
 ## Steps
 
 1. `npm install && npm run package` creates `out/com.twitchlite.app_<version>_all.ipk`.
-2. Generate the manifest from that exact IPK with the official tool (`webosbrew-toolbox-gen-manifest`, from https://github.com/webosbrew/dev-toolbox-cli; it is only shipped as a Linux .deb). For 1.1.0 it was generated with an equivalent script (same fields, SHA-256 and size of the exact IPK).
-   It records `id`, `version`, `type`, `title`, `iconUri`, `sourceUrl`, `rootRequired` (`false`), `ipkUrl`, `ipkSize` and `ipkHash.sha256`.
-   The hash and size describe one exact IPK: generate a new manifest for every release. Do not write it by hand.
-3. Create a GitHub release and attach **both** the IPK and `com.twitchlite.app.manifest.json`, so that
+2. Generate the manifest from that exact IPK: `npm run manifest` (`tools/gen-manifest.mjs`) writes `out/com.twitchlite.app.manifest.json`. It is equivalent to the official tool (`webosbrew-toolbox-gen-manifest`, from https://github.com/webosbrew/dev-toolbox-cli, which is only shipped as a Linux .deb): same fields, and the SHA-256 and sizes of the exact IPK (`installedSize` is the sum of the file sizes in `data.tar.gz`; it reproduces the published 1.1.0 manifest).
+   It records `id`, `version`, `type`, `title`, `iconUri`, `sourceUrl`, `rootRequired` (`false`), `ipkUrl`, `ipkSize`, `ipkHash.sha256` and `installedSize`.
+   The hash and size describe one exact IPK: **generate a new manifest for every release, right after building the IPK you attach** (rebuilding the IPK changes the hash). Do not write it by hand or reuse the previous one. The manifest is not committed (`out/` is ignored): it only goes into the release.
+3. Create a GitHub release (tag `v<version>`) and attach **both** the IPK and `com.twitchlite.app.manifest.json`, so that
    `https://github.com/adamff-dev/twitch-lite-webos/releases/latest/download/com.twitchlite.app.manifest.json` resolves.
 4. Fork https://github.com/webosbrew/apps-repo, copy `com.twitchlite.app.yml` from this folder to `packages/`, and open a pull request.
 5. Optional: `webosbrew-toolbox-ipk-verify` shows which firmware versions the IPK should work on.

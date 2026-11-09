@@ -6,6 +6,7 @@
   "scripts": {
     "build": "node tools/build.mjs",
     "package": "node tools/build.mjs && ares-package dist -o out",
+    "manifest": "node tools/gen-manifest.mjs",
     "test": "node tools/test.mjs"
   },
   "devDependencies": {

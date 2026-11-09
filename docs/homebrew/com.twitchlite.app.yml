@@ -15,11 +15,12 @@ description: |
 
   - Home, Categories, Following, Videos and Search, with number keys for each tab
   - Sign in with your own Twitch account by QR code
-  - Read-only chat for live streams, and a synchronized chat replay on past broadcasts, with Twitch, 7TV, BTTV and FFZ emotes (small static images, bounded memory)
+  - Read-only chat for live streams, and a synchronized chat replay on past broadcasts, with Twitch, 7TV, BTTV and FFZ emotes (small static images, bounded memory); the Red button shows or hides it
+  - Live alerts: while you watch, a small message with the channel's picture (and a short beep, optional) when another channel you follow goes live; click it or press Yellow to switch to it
   - Ad blocking on live streams (on by default, can be turned off; it relies on how Twitch serves ads today)
   - VODs resume where you left them
-  - Content in your TV language
-  - Configurable chat (size, width, height, corner, opacity)
+  - Content in your TV language; choosing a tab again reloads it
+  - Configurable chat (size, width, height, corner, opacity), and a scrollable settings screen
   - English and Spanish interface
   - Tries to restore the audio of VOD segments muted by Twitch and to play subscriber-only VODs from public CDN files. Both rely on how Twitch serves videos today and may stop working at any time; the first one can be turned off in Settings
 
