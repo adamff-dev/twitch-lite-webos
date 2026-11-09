@@ -538,6 +538,7 @@
   // Devuelve true si consumió la tecla.
   function key(k) {
     if (!isOpen) return false;
+    if (k === 'refresh') { toggleChat(); return true; }          // botón Rojo: muestra u oculta el chat (sin sacar el panel)
     var hidden = ovl.hidden;
     showOvl();
     if (menu) {

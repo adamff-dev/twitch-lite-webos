@@ -106,7 +106,7 @@ Translations live in `app/js/i18n.js`. To add a language, copy the `en` block an
 | 1 – 6 | Home, Categories, Following, Videos, Search, Account (Sign in / your user). Home to Videos reload the tab |
 | CH+ / CH− (or Page Up / Page Down) | Jump 3 rows |
 | Yellow | On a live stream: show that channel's videos |
-| Red | Refresh the current tab (same as choosing it again) |
+| Red | Refresh the current tab (same as choosing it again). In the player: show or hide the chat |
 | Green | Settings (also inside the player, so you can watch the chat while you change them) |
 
 **Player**
@@ -120,6 +120,7 @@ The buttons are **◀ 10 s · Pause/Play · 10 s ▶** (VOD only), **Quality**, 
 | ▲ ▼ | On a VOD, move between the buttons and the progress bar |
 | OK | Press the focused button. With the panel hidden, pauses or resumes |
 | ◀ ▶ on the progress bar (VOD) | Skip ±10 s. **Press repeatedly to skip further**: 10, 10, 30, 30, 60, 60, 120, 120, 300 s. One seek is applied when you stop pressing |
+| Red | Show or hide the chat (on a live stream and on a VOD), without bringing up the panel |
 | Back | Closes the quality menu; otherwise exits the player |
 | Yellow / Blue | While a [live alert](#live-alerts) is on screen: watch that channel / dismiss the alert |
 | ▲ at the top of the panel | While a live alert is on screen: move the focus to it. Then ◀ ▶ choose Watch or Close, OK presses, ▼ or Back returns to the player |
@@ -173,7 +174,7 @@ Press **Green** to open the settings. ▲ ▼ move between rows (the list scroll
 
 On a **live stream** it shows the live chat. On a **VOD** it shows the replay of the original chat, synchronized with the video: messages appear when the video reaches their second, and a seek (forward, backward or a quality change) reloads the chat from the new position. Nothing appears while paused.
 
-Turn it on with Down during a live stream. The preference is remembered. It is designed for modest TVs:
+Turn it on and off with the **Red** button (or the **Chat** button of the player panel). The preference is remembered. It is designed for modest TVs:
 
 - a single WebSocket connection, **open only while the chat is visible**;
 - **30 fixed DOM nodes that are recycled** (no elements are created or destroyed at runtime);

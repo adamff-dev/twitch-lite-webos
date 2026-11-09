@@ -218,7 +218,7 @@ function boot(o = {}) {
     const t0 = Date.now();
     while (!fn()) { if (Date.now() - t0 > ms) throw new Error('timeout esperando: ' + what); await sleep(10); }
   };
-  const K = { left: 37, up: 38, right: 39, down: 40, ok: 13, back: 461, yellow: 405, green: 404, ff: 417, rw: 412, pgup: 33, pgdn: 34 };
+  const K = { left: 37, up: 38, right: 39, down: 40, ok: 13, back: 461, red: 403, yellow: 405, green: 404, ff: 417, rw: 412, pgup: 33, pgdn: 34 };
   const focused = () => d.querySelector('.foc');
   const highlighted = () => d.querySelectorAll('#app .foc').length;
   const cards = () => d.querySelectorAll('#grid .card');
@@ -999,6 +999,19 @@ function boot(o = {}) {
   assert.equal($('chat').hidden, true);
   assert.equal(t.sockets[0].closed, true, 'al ocultar el chat se cierra la conexión');
   assert.equal(w.localStorage.getItem('chat'), '0');
+  // botón Rojo: alterna el chat (abre y cierra) sin sacar el panel ni salir del reproductor
+  $('ovl').hidden = true;
+  key(K.red);
+  assert.equal(w.Chat.isOn(), true, 'Rojo abre el chat');
+  assert.equal($('chat').hidden, false);
+  assert.ok($('bchat').classList.contains('act'));
+  assert.equal($('ovl').hidden, true, 'sin mostrar el panel');
+  await until(() => t.sockets.length === 2, 'conexión del chat con Rojo');
+  key(K.red);
+  assert.equal(w.Chat.isOn(), false, 'Rojo lo cierra');
+  assert.equal($('chat').hidden, true);
+  assert.equal(t.sockets[1].closed, true);
+  assert.equal(w.Player.isOpen(), true);
   t.goBtn('close'); key(K.ok);
   assert.equal(w.Player.isOpen(), false, 'el botón Salir cierra el reproductor');
   ok('reproductor: el botón Chat muestra/oculta el chat (solo conecta si está visible) y Salir cierra');
@@ -1133,7 +1146,7 @@ function boot(o = {}) {
   assert.equal($('cmsgs').lastChild.firstChild.textContent, 'U100:');
   assert.equal(w.Emotes._stats().want, 'chan1', 'el chat del VOD usa los emotes del canal del vídeo');
   assert.ok($('cmsgs').children.length <= 8, 'tras el arranque solo se pintan los más recientes');
-  assert.equal(t.sockets.length, 1, 'un VOD no abre WebSocket');
+  assert.equal(t.sockets.length, 2, 'un VOD no abre WebSocket (siguen los 2 del chat en directo)');
   await sleep(600);
   assert.equal(lastMsg(), 'msg 100', 'sin avanzar el vídeo no salen mensajes nuevos (ni del futuro)');
   v.__t = 103;
