@@ -167,6 +167,19 @@ function boot(o = {}) {
   const w = dom.window;
   const N = o.net || net(o);
   w.fetch = N.fetch;
+  // Serve bundled locale JSON for synchronous startup loading in jsdom.
+  const NativeXHR = w.XMLHttpRequest;
+  w.XMLHttpRequest = class extends NativeXHR {
+    open(method, url, async, ...args) {
+      this.__locale = /^locales\/[a-z]{2}\.json$/.test(url) ? url : null;
+      if (!this.__locale) return super.open(method, url, async, ...args);
+    }
+    send(body) {
+      if (!this.__locale) return super.send(body);
+      Object.defineProperty(this, 'status', { value: 200 });
+      Object.defineProperty(this, 'responseText', { value: fs.readFileSync(path.join(appDir, this.__locale), 'utf8') });
+    }
+  };
   // salvo que el test pida los ajustes de serie (o traiga los suyos), se parte con el bloqueo de anuncios apagado: los flujos
   // de reproducción de los tests usan el reproductor nativo (el bloqueo, activado por defecto, se prueba aparte)
   const ls = { ...(o.ls || {}) };
@@ -2065,14 +2078,14 @@ function boot(o = {}) {
   ok('navegación: Atrás por niveles y salir solo con doble pulsación');
 }
 
-/* ---------- 9) idioma (español / inglés) ---------- */
+/* ---------- 9) idioma (español / inglés / alemán) ---------- */
 {
   const SESSION = { tauth: JSON.stringify({ access: 'acc1', refresh: 'r', userId: '42', login: 'demo_user', cid: 'ue6666qo983tsx6so1t0vnawi233wa' }) };
 
-  // el idioma es el del sistema: es-* → español, cualquier otro → inglés
+  // El idioma sigue al sistema: es-* → español, de-* → alemán, el resto → inglés
   let t = boot({ lang: null });
   assert.equal(t.w.I18n.lang(), 'en', 'jsdom informa en-US: inglés');
-  for (const [loc, want] of [['es-ES', 'es'], ['es-MX', 'es'], ['ES', 'es'], ['en-GB', 'en'], ['fr-FR', 'en'], ['de', 'en']]) {
+  for (const [loc, want] of [['es-ES', 'es'], ['es-MX', 'es'], ['ES', 'es'], ['en-GB', 'en'], ['fr-FR', 'en'], ['de', 'de'], ['de-DE', 'de']]) {
     t = boot({ lang: loc });
     assert.equal(t.w.I18n.lang(), want, loc);
   }
@@ -2080,7 +2093,7 @@ function boot(o = {}) {
   assert.equal(t.$('acct').textContent, 'Entrar');
   assert.equal(t.d.documentElement.lang, 'es');
   assert.equal(t.d.getElementById('lang'), null, 'ya no hay botón de idioma');
-  ok('idioma: sigue al sistema (es-* → español, resto → inglés) y no hay botón');
+  ok('idioma: sigue al sistema (es-* → español, de-* → alemán, resto → inglés) y no hay botón');
 
   // interfaz en inglés
   t = boot({ lang: 'en' });
