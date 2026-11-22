@@ -28,6 +28,8 @@ html = html.replace(/<script src="([^"]+)"><\/script>\s*/g, (_, f) => `<script>$
 html = html.replace(/>\s+</g, '><');
 fs.writeFileSync(path.join(out, 'index.html'), html);
 fs.copyFileSync(path.join(src, 'appinfo.json'), path.join(out, 'appinfo.json'));
+// Locale JSON files are requested by i18n.js at startup, also in packaged IPKs.
+fs.cpSync(path.join(src, 'locales'), path.join(out, 'locales'), { recursive: true });
 fs.mkdirSync(path.join(out, 'js'), { recursive: true });
 fs.copyFileSync(path.join(src, 'js', 'hls.light.min.js'), path.join(out, 'js', 'hls.light.min.js'));
 
