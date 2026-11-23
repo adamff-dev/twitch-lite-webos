@@ -2082,10 +2082,10 @@ function boot(o = {}) {
 {
   const SESSION = { tauth: JSON.stringify({ access: 'acc1', refresh: 'r', userId: '42', login: 'demo_user', cid: 'ue6666qo983tsx6so1t0vnawi233wa' }) };
 
-  // El idioma sigue al sistema: es-* → español, de-* → alemán, el resto → inglés
+  // El idioma sigue al sistema: es-* → español, de-* → alemán, fr-* → francés, el resto → inglés
   let t = boot({ lang: null });
   assert.equal(t.w.I18n.lang(), 'en', 'jsdom informa en-US: inglés');
-  for (const [loc, want] of [['es-ES', 'es'], ['es-MX', 'es'], ['ES', 'es'], ['en-GB', 'en'], ['fr-FR', 'en'], ['de', 'de'], ['de-DE', 'de']]) {
+  for (const [loc, want] of [['es-ES', 'es'], ['es-MX', 'es'], ['ES', 'es'], ['en-GB', 'en'], ['fr-FR', 'fr'], ['fr', 'fr'], ['it-IT', 'en'], ['de', 'de'], ['de-DE', 'de']]) {
     t = boot({ lang: loc });
     assert.equal(t.w.I18n.lang(), want, loc);
   }
@@ -2093,7 +2093,7 @@ function boot(o = {}) {
   assert.equal(t.$('acct').textContent, 'Entrar');
   assert.equal(t.d.documentElement.lang, 'es');
   assert.equal(t.d.getElementById('lang'), null, 'ya no hay botón de idioma');
-  ok('idioma: sigue al sistema (es-* → español, de-* → alemán, resto → inglés) y no hay botón');
+  ok('idioma: sigue al sistema (es-* → español, de-* → alemán, fr-* → francés, resto → inglés) y no hay botón');
 
   // interfaz en inglés
   t = boot({ lang: 'en' });

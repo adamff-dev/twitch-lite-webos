@@ -3,7 +3,7 @@
 (function (w) {
   'use strict';
   var D = {}, lang = 'en', listeners = [];
-  var supported = ['en', 'es', 'de'];
+  var supported = ['en', 'es', 'de', 'fr'];
   function readLocale(code) {
     try {
       var xhr = new XMLHttpRequest();
