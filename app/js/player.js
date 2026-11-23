@@ -182,7 +182,31 @@
     if (on) { adWasMuted = v.muted; adSince = Date.now(); v.muted = true; flash(I18n.t('player.adMuted'), 4000); }
     else v.muted = adWasMuted;
   }
-  function adUrl() { return qi > 0 ? quals[qi].url : (quals.length > 1 ? quals[1].url : ''); }
+  // Primera calidad H.264 (las HEVC/AV1 solo se reproducen con el reproductor nativo: hls.js no cambia de códec a mitad).
+  function firstH264() {
+    for (var i = 1; i < quals.length; i++) if (!quals[i].hevc) return quals[i].url;
+    return '';
+  }
+  function hasHevc() {
+    for (var i = 1; i < quals.length; i++) if (quals[i].hevc) return true;
+    return false;
+  }
+  // URL para hls.js: la lista completa (Auto) solo si no trae variantes HEVC; si las trae, la primera H.264.
+  function hlsSource() {
+    if (!quals[qi]) return '';
+    return qi === 0 && hasHevc() ? (firstH264() || quals[0].url) : quals[qi].url;
+  }
+  // hls.js solo conoce el códec por la lista maestra: con una lista de medios suelta supone H.264 y falla con HEVC/AV1.
+  // Para esas calidades se le da una lista maestra mínima (blob) que apunta a la lista de medios y declara su CODECS.
+  function masterBlob(q) {
+    if (!q || !q.hevc || !q.codecs || !w.Blob || !w.URL || !URL.createObjectURL) return '';
+    try {
+      var t = '#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=' + (q.bw || 8000000) + (q.res ? ',RESOLUTION=' + q.res : '') +
+        ',CODECS="' + q.codecs + '"\n' + q.url + '\n';
+      return URL.createObjectURL(new Blob([t], { type: 'application/vnd.apple.mpegurl' }));
+    } catch (e) { return ''; }
+  }
+  function adUrl() { return qi > 0 ? quals[qi].url : (quals.length > 1 ? firstH264() || quals[1].url : ''); }
   function adLag() {                                      // segundos que el vídeo va por detrás del borde de la lista
     try { var r = v.seekable; if (r && r.length) return Math.max(0, r.end(r.length - 1) - v.currentTime); } catch (e) {}
     return 8;
@@ -211,7 +235,7 @@
   }
 
   function probeUrl() {
-    return qi > 0 ? quals[qi].url : (quals.length > 1 ? quals[1].url : (quals[0] ? quals[0].url : ''));
+    return qi > 0 ? quals[qi].url : (quals.length > 1 ? firstH264() || quals[1].url : (quals[0] ? quals[0].url : ''));
   }
 
   function hlsFail() {
@@ -228,7 +252,7 @@
   function startHls(id) {
     if (!isOpen || id !== loadId || hlsStarting || unmuteFailed || !w.Unmute) return;
     if (hls) { keepPosition(); stopHls(); }
-    var source = quals[qi] ? quals[qi].url : '';
+    var source = hlsSource();
     if (!source) return;
     hlsStarting = true;
     hlsErrs = 0;
@@ -254,7 +278,7 @@
       inst.on(Hls.Events.MANIFEST_PARSED, function () {
         if (hls !== inst) return;
         hlsErrs = 0;
-        if ((quals[qi] ? quals[qi].url : '') !== source) { startHls(id); return; }
+        if (hlsSource() !== source) { startHls(id); return; }
         if (wasPlaying) { var p = v.play(); if (p && p.catch) p.catch(function () {}); }
         info();
       });
@@ -264,7 +288,7 @@
       hlsStarting = false;
       unmuteFailed = true;
       if (!isOpen || id !== loadId) return;
-      if ((quals[qi] ? quals[qi].url : '') !== source) { keepPosition(); play(); }
+      if (hlsSource() !== source) { keepPosition(); play(); }
       flash(I18n.t('player.unmuteFailed'), 4000);
     });
   }
@@ -297,7 +321,7 @@
   // El token y la lista maestra del respaldo se piden con antelación (y se renuevan): así, cuando llega un anuncio, solo falta
   // pedir la lista de medios y el vídeo no se queda sin datos esperándolos.
   function warmBackup() {
-    if (!adblockHls || isVod) return;
+    if (!adblockHls || isVod || (quals[qi] && quals[qi].hevc)) return;   // el respaldo es H.264: no encaja en un flujo HEVC
     if (!backupT) backupT = setInterval(warmBackup, BACKUP_WARM);
     if (backupVars && Date.now() - backupAt < BACKUP_WARM) return;
     fetchBackup().then(function () {}, function () {});
@@ -306,7 +330,7 @@
   function startAdblockHls(id) {
     if (!isOpen || id !== loadId || hlsStarting || unmuteFailed || !w.Adblock) return;
     if (hls) { keepPosition(); stopHls(); }
-    var source = quals[qi] ? quals[qi].url : '';
+    var source = hlsSource();
     if (!source) return;
     hlsStarting = true;
     hlsErrs = 0;
@@ -323,6 +347,7 @@
       });
       hls = inst;
       adblockHls = true;
+      var blob = masterBlob(quals[qi]);
       inst.on(Hls.Events.ERROR, function (ev, data) {
         if (!data || !data.fatal || hls !== inst) return;
         if (++hlsErrs > 2) { hlsFail(); return; }
@@ -331,15 +356,16 @@
         else hlsFail();
       });
       inst.on(Hls.Events.MANIFEST_PARSED, function () {
+        if (blob) { try { URL.revokeObjectURL(blob); } catch (e) {} blob = ''; }
         if (hls !== inst) return;
         hlsErrs = 0;
-        if ((quals[qi] ? quals[qi].url : '') !== source) { startAdblockHls(id); return; }
+        if (hlsSource() !== source) { startAdblockHls(id); return; }
         if (wasPlaying) { var p = v.play(); if (p && p.catch) p.catch(function () {}); }
         info();
         warmBackup();
       });
       inst.attachMedia(v);
-      inst.loadSource(source);
+      inst.loadSource(blob || source);
     }, function () {
       hlsStarting = false;
       unmuteFailed = true;
@@ -347,7 +373,7 @@
       if (!isOpen || id !== loadId) return;
       play();                                           // sin hls.js: reproductor nativo con la lista original
       flash(I18n.t('player.adblockFailed'), 4000);
-    }, { backup: adBackup, onLeak: function () { adLeakAt = Date.now(); } });
+    }, { backup: (quals[qi] && quals[qi].hevc) ? null : adBackup, onLeak: function () { adLeakAt = Date.now(); } });
   }
 
   function checkUnmute(id, known) {
@@ -364,9 +390,11 @@
   function play() {
     pausedAt = 0;                                       // un flujo nuevo empieza en vivo: no hay pausa que recuperar
     var useAdblock = !isVod && Settings.get('adblock') === 'on' && !!w.Adblock && !unmuteFailed;
+    var nativeOnly = !!(quals[qi] && quals[qi].hevc) && !useAdblock;   // HEVC/AV1 (1440p...) sin bloqueo de anuncios: reproductor nativo (hls.js no se usa en VOD)
+    if (nativeOnly && (hls || hlsStarting)) { keepPosition(); stopHls(); stopMedia(); }
     if (adblockHls && !useAdblock) stopHls();           // el ajuste se apagó (o hls.js falló): vuelve al reproductor nativo
     if (useAdblock) { startAdblockHls(loadId); startAds(); return; }
-    if (hls || hlsStarting) { startHls(loadId); return; }
+    if (!nativeOnly && (hls || hlsStarting)) { startHls(loadId); return; }
     v.src = quals[qi].url;
     var p = v.play();
     if (p && p.catch) p.catch(function () {});
