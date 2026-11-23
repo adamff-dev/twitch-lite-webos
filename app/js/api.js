@@ -259,18 +259,40 @@
     });
   }
 
-  // Parsea el master playlist HLS -> [{name, url}] (de mejor a peor calidad)
+  // Parsea el master playlist HLS -> [{name, url}] (de mejor a peor calidad). Si Twitch sirve varios códecs por calidad
+  // (p.ej. 1440p60 en HEVC y en H.264) solo se conserva la primera lista de cada nombre.
   function parseMaster(text) {
-    var out = [], name = null, lines = text.split(/\r?\n/);
+    var out = [], seen = {}, name = null, info = null, lines = text.split(/\r?\n/);
     for (var i = 0; i < lines.length; i++) {
       var l = lines[i], m;
       if (l.indexOf('#EXT-X-MEDIA:') === 0 && (m = /NAME="([^"]+)"/.exec(l))) name = m[1];
+      else if (l.indexOf('#EXT-X-STREAM-INF:') === 0) {
+        var c = /CODECS="([^"]*)"/.exec(l), b = /BANDWIDTH=(\d+)/.exec(l), r = /RESOLUTION=(\d+x\d+)/.exec(l);
+        info = { codecs: c ? c[1] : '', bw: b ? b[1] : '', res: r ? r[1] : '' };
+        info.hevc = /(hev1|hvc1|av01|vp09)/.test(info.codecs);   // no H.264: hls.js no sabe cambiar de códec a mitad
+      }
       else if (l.charAt(0) !== '#' && /^https?:/.test(l)) {
-        out.push({ name: name || ('Calidad ' + (out.length + 1)), url: l });
-        name = null;
+        var n = name || ('Calidad ' + (out.length + 1));
+        if (!seen[n]) { seen[n] = 1; out.push({ name: n, url: l, hevc: !!(info && info.hevc), codecs: info ? info.codecs : '', bw: info ? info.bw : '', res: info ? info.res : '' }); }
+        name = null; info = null;
       }
     }
     return out;
+  }
+
+  // Códecs de vídeo que el navegador de la TV puede decodificar. Twitch solo ofrece 1440p/4K (HEVC/AV1) si se los anunciamos.
+  function codecs() {
+    var v = document.createElement('video'), list = [];
+    function ok(type) {
+      try {
+        if (w.MediaSource && MediaSource.isTypeSupported) return MediaSource.isTypeSupported(type);
+        return !!v.canPlayType && v.canPlayType(type) !== '';
+      } catch (e) { return false; }
+    }
+    if (ok('video/mp4; codecs="av01.0.12M.08"')) list.push('av1');
+    if (ok('video/mp4; codecs="hvc1.1.6.L153.B0"') || ok('video/mp4; codecs="hev1.1.6.L153.B0"')) list.push('h265');
+    list.push('h264');
+    return list.join(',');
   }
 
   // El token de reproducción se pide con la sesión del usuario cuando es posible (como hace el reproductor oficial): sin ella
@@ -310,7 +332,7 @@
       }
       var master = 'https://usher.ttvnw.net/' + (vod ? 'vod/' + encodeURIComponent(item.id) : 'api/channel/hls/' + encodeURIComponent(item.login)) + '.m3u8' +
         '?player=' + encodeURIComponent(w.Settings ? Settings.get('usher') : 'twitchweb') + '&token=' + encodeURIComponent(t.value) + '&sig=' + t.signature +
-        '&allow_audio_only=true&allow_source=true&type=any&fast_bread=true&p=' + Math.floor(Math.random() * 1e6);
+        '&allow_audio_only=true&allow_source=true&type=any&fast_bread=true&platform=web&supported_codecs=' + codecs() + '&p=' + Math.floor(Math.random() * 1e6);
       return timeout(fetch(master), 10000).then(function (r) {
         if (r.status === 404 || r.status === 403) {
           if (vod) return subonly(item.id);
